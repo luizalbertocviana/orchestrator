@@ -40,29 +40,30 @@ readonly COLOR_BLUE='\033[34m'
 # Print colored output
 print_status() {
   local color="$1"
-  local message="$2"
-  printf "${color}${message}${COLOR_RESET}\n" >&2
+  local label="$2"
+  local message="$3"
+  printf "${color}[${label}]${message}${COLOR_RESET}\n" >&2
 }
 
 print_info() {
-  print_status "$COLOR_BLUE" "[INFO] $1"
+  print_status "$COLOR_BLUE" "INFO" "$1"
 }
 
 print_success() {
-  print_status "$COLOR_GREEN" "[SUCCESS] $1"
+  print_status "$COLOR_GREEN" "SUCCESS" "$1"
 }
 
 print_warning() {
-  print_status "$COLOR_YELLOW" "[WARNING] $1"
+  print_status "$COLOR_YELLOW" "WARNING" "$1"
 }
 
 print_error() {
-  print_status "$COLOR_RED" "[ERROR] $1"
+  print_status "$COLOR_RED" "ERROR" "$1"
 }
 
 print_header() {
   local title="$1"
-  print_status "$COLOR_BOLD" "\n========== $title =========="
+  printf "${COLOR_BOLD}\n========== $title ==========${COLOR_RESET}\n" >&2
 }
 
 # Verify that required tools are available
