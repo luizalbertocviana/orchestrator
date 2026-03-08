@@ -11,7 +11,7 @@
 # Requirements:
 #   - Git repository initialized in current directory
 #   - 'bd' (beads) command available in PATH
-#   - 'opencode' command available in PATH for AI agent interaction
+#   - agent command command available in PATH for AI agent interaction
 #   - specs.md file present for project specifications
 #
 ################################################################################
@@ -24,7 +24,10 @@ set -o pipefail
 
 readonly MAX_RETRIES=3
 readonly MAX_ITERATIONS=20  # Prevent infinite loops
-readonly OPENCODE_TIMEOUT_LIMIT=600s
+readonly AGENT_TIMEOUT_LIMIT=600s
+readonly AGENT_COMMAND="opencode"
+readonly AGENT_NONINTERACTIVE_PARAM="run"
+
 
 # Color codes for output
 readonly COLOR_RESET='\033[0m'
@@ -73,7 +76,7 @@ print_header() {
 
 # Verify that required tools are available
 verify_tools() {
-  local tools=("git" "bd" "opencode")
+  local tools=("git" "bd" "jq" "$AGENT_COMMAND")
   local missing=()
 
   for tool in "${tools[@]}"; do
@@ -232,7 +235,7 @@ EOF
     print_info "Calling agent: $agent_name (attempt $attempt/$MAX_RETRIES)"
     
     local output
-    output=$(timeout $OPENCODE_TIMEOUT_LIMIT opencode run "$full_prompt" 2>&1)
+    output=$(timeout $AGENT_TIMEOUT_LIMIT $AGENT_COMMAND $AGENT_NONINTERACTIVE_PARAM "$full_prompt" 2>&1)
     local exit_code=$?
     
     if [[ $exit_code -eq 0 ]] && [[ -n "$output" ]]; then
