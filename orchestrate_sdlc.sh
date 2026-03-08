@@ -145,6 +145,7 @@ initialize_beads() {
   
   # Create initial task if none exists
   if ! bd list > /dev/null 2>&1 || [[ -z "$(bd list)" ]]; then
+    bd init
     bd create "Phase: Requirements Analysis - Review and refine specs.md"
     print_success "Initial bead task created"
   else
