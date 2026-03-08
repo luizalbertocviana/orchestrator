@@ -24,6 +24,7 @@ set -o pipefail
 
 readonly MAX_RETRIES=3
 readonly MAX_ITERATIONS=20  # Prevent infinite loops
+readonly OPENCODE_TIMEOUT_LIMIT=600s
 
 # Color codes for output
 readonly COLOR_RESET='\033[0m'
@@ -231,7 +232,7 @@ EOF
     print_info "Calling agent: $agent_name (attempt $attempt/$MAX_RETRIES)"
     
     local output
-    output=$(opencode run "$full_prompt" 2>&1)
+    output=$(timeout $OPENCODE_TIMEOUT_LIMIT opencode run "$full_prompt" 2>&1)
     local exit_code=$?
     
     if [[ $exit_code -eq 0 ]] && [[ -n "$output" ]]; then
