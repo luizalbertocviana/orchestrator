@@ -145,7 +145,7 @@ initialize_beads() {
   
   # Create initial task if none exists
   if ! bd list > /dev/null 2>&1 || [[ -z "$(bd list)" ]]; then
-    bd add "Phase: Requirements Analysis - Review and refine specs.md"
+    bd create "Phase: Requirements Analysis - Review and refine specs.md"
     print_success "Initial bead task created"
   else
     print_info "Beads system already initialized"
@@ -271,7 +271,7 @@ commit_changes() {
 # Log action to beads
 log_to_beads() {
   local message="$1"
-  bd add "$message" 2>/dev/null || print_warning "Failed to log to beads: $message"
+  bd create "$message" 2>/dev/null || print_warning "Failed to log to beads: $message"
 }
 
 ################################################################################
@@ -289,12 +289,12 @@ Your responsibilities:
 4. Propose additional requirements for robustness (error handling, performance, security, scalability).
 
 Instructions:
-- Use 'bd add' to log findings and create tasks for downstream phases.
+- Use 'bd create' to log findings and create tasks for downstream phases.
 - Update beads status as you work using 'bd update [ID] "status"'.
 - Use Git to version control any updated documentation: 'git checkout -b requirements/analysis', make changes, then 'git commit -m "Requirements: [summary]"' and 'git push origin requirements/analysis'.
 - Output your findings clearly, organized by category (functional, non-functional, security, performance).
 - Highlight any clarifications or assumptions made.
-- Log completion to beads when ready: 'bd add "Requirement analysis completed. Ready for design phase."'
+- Log completion to beads when ready: 'bd create "Requirement analysis completed. Ready for design phase."'
 - End by suggesting the next phase, but defer final decision to Orchestrator.
 
 CRITICAL: Only use bd and git commands - do not make up tool names.
@@ -314,11 +314,11 @@ Your responsibilities:
 
 Instructions:
 - Use 'bd list' to check that requirements phase is complete.
-- Create implementation tasks using 'bd add "Dev task: Implement [module]"' for each component.
+- Create implementation tasks using 'bd create "Dev task: Implement [module]"' for each component.
 - Use Git to version control design documents: 'git checkout -b design/architecture', add files, 'git commit -m "Design: [summary]"', 'git push origin design/architecture'.
 - Provide clear system architecture overview and technology stack rationale.
 - Break down design into implementable components with clear interfaces.
-- Log completion when ready: 'bd add "System design completed. Ready for development phase."'
+- Log completion when ready: 'bd create "System design completed. Ready for development phase."'
 - End by suggesting the Development phase, but defer final decision to Orchestrator.
 
 CRITICAL: Only use bd and git commands - do not make up tool names.
@@ -343,8 +343,8 @@ Instructions:
 - Use Git with meaningful commits: 'git checkout -b dev/[feature-name]', develop, 'git commit -m "Dev: Implement [feature]"', 'git push origin dev/[feature-name]'.
 - Present implemented code with explanations of key logic.
 - List all modules/features completed.
-- Report any blockers or design issues via beads: 'bd add "BLOCKER: [issue]"'.
-- Log completion when ready: 'bd add "Code implementation completed. Ready for testing."'
+- Report any blockers or design issues via beads: 'bd create "BLOCKER: [issue]"'.
+- Log completion when ready: 'bd create "Code implementation completed. Ready for testing."'
 - End by suggesting the Testing phase, but defer final decision to Orchestrator.
 
 CRITICAL: Only use bd and git commands - do not make up tool names.
@@ -365,13 +365,13 @@ Your responsibilities:
 
 Instructions:
 - Use 'bd list' to confirm all dev modules are marked "completed".
-- Use 'bd add "BUG: [description]"' for each defect discovered.
-- Use 'bd add "CRITICAL: [issue]"' for blockers that prevent deployment.
-- Use 'bd add "TEST: [scenario]"' to document test runs.
+- Use 'bd create "BUG: [description]"' for each defect discovered.
+- Use 'bd create "CRITICAL: [issue]"' for blockers that prevent deployment.
+- Use 'bd create "TEST: [scenario]"' to document test runs.
 - Use Git to version control tests: 'git checkout -b testing/[module-name]', add test scripts, 'git commit -m "Tests: [summary]"', 'git push origin testing/[module-name]'.
 - Provide comprehensive test report (unit test results, integration tests, functional tests).
 - List all bugs found, categorized by severity (critical, major, minor).
-- Log completion when ready: 'bd add "Testing phase completed. [X] bugs found and logged."'
+- Log completion when ready: 'bd create "Testing phase completed. [X] bugs found and logged."'
 - End by suggesting next phase (Deployment if all critical bugs resolved, else Development if major bugs found).
 
 CRITICAL: Only use bd and git commands - do not make up tool names.
@@ -392,14 +392,14 @@ Your responsibilities:
 
 Instructions:
 - Use 'bd list' to verify testing phase marked "completed".
-- Use 'bd add "Deployment: [step/stage]"' for each deployment milestone.
-- Use 'bd add "ISSUE: [environment/config problem]"' if problems arise.
-- Use 'bd add "ROLLBACK REQUIRED: [reason]"' if deployment fails critically.
+- Use 'bd create "Deployment: [step/stage]"' for each deployment milestone.
+- Use 'bd create "ISSUE: [environment/config problem]"' if problems arise.
+- Use 'bd create "ROLLBACK REQUIRED: [reason]"' if deployment fails critically.
 - Use Git to version control deployment configs: 'git checkout -b deploy/production', add configs, 'git commit -m "Deploy: [summary]"', 'git push origin deploy/production'.
 - Tag release after successful deployment: 'git tag -a v[version] -m "Release [version]"' and 'git push origin v[version]'.
 - Document deployment process and any issues encountered.
 - Provide deployment checklist and verification steps.
-- Log completion when ready: 'bd add "Deployment to production completed successfully. Version [X] live."'
+- Log completion when ready: 'bd create "Deployment to production completed successfully. Version [X] live."'
 - End by suggesting Maintenance phase, but defer final decision to Orchestrator.
 
 CRITICAL: Only use bd and git commands - do not make up tool names.
@@ -420,14 +420,14 @@ Your responsibilities:
 
 Instructions:
 - Use 'bd list' to confirm deployment is live and assess any maintenance needs.
-- Use 'bd add "Maintenance: [activity/issue]"' for all work performed.
-- Use 'bd add "Enhancement: [improvement proposal]"' for planned upgrades.
-- Use 'bd add "INCIDENT: [description]"' for production issues.
-- Use 'bd add "CRITICAL INCIDENT: [issue]"' for urgent issues.
+- Use 'bd create "Maintenance: [activity/issue]"' for all work performed.
+- Use 'bd create "Enhancement: [improvement proposal]"' for planned upgrades.
+- Use 'bd create "INCIDENT: [description]"' for production issues.
+- Use 'bd create "CRITICAL INCIDENT: [issue]"' for urgent issues.
 - Use Git to handle code reviews and hotfixes: 'git checkout -b hotfix/[issue-name]', fix code, 'git commit -m "Hotfix: [summary]"', 'git push origin hotfix/[issue-name]'.
 - After review approval, merge: 'git checkout main && git merge [branch-name]'.
 - Provide maintenance status report (issues resolved, improvements identified, code quality metrics).
-- Log completion when ready: 'bd add "Maintenance review completed. System stable."'
+- Log completion when ready: 'bd create "Maintenance review completed. System stable."'
 - End by suggesting next phase (Refinement if improvements needed, else continue maintenance).
 
 CRITICAL: Only use bd and git commands - do not make up tool names.
@@ -447,15 +447,15 @@ Your responsibilities:
 
 Instructions:
 - Use 'bd list' to understand complete project state and all proposals.
-- Use 'bd add "Refinement analysis: [findings]"' to document your analysis.
-- Use 'bd add "Improvement: [proposal]"' for each identified opportunity.
+- Use 'bd create "Refinement analysis: [findings]"' to document your analysis.
+- Use 'bd create "Improvement: [proposal]"' for each identified opportunity.
 - Use 'bd update [ID] "priority: high/medium/low"' to rank improvements.
-- Use 'bd add "Next iteration: [plan]"' to propose the next development cycle.
+- Use 'bd create "Next iteration: [plan]"' to propose the next development cycle.
 - Use Git to document findings: 'git checkout -b analysis/improvements', create analysis reports, 'git commit -m "Analysis: [summary]"', 'git push origin analysis/improvements'.
 - Provide comprehensive project health report (code quality metrics, test coverage, performance).
 - List identified improvements prioritized by impact.
 - Recommend whether to continue maintenance, start new development cycle, or archive project.
-- Log final status: 'bd add "Project analysis complete. Recommendations logged."'
+- Log final status: 'bd create "Project analysis complete. Recommendations logged."'
 - End by suggesting next phase, but defer final decision to Orchestrator.
 
 CRITICAL: Only use bd and git commands - do not make up tool names.
