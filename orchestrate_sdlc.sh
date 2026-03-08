@@ -25,8 +25,8 @@ set -o pipefail
 readonly MAX_RETRIES=3
 readonly MAX_ITERATIONS=20  # Prevent infinite loops
 readonly AGENT_TIMEOUT_LIMIT=600s
-readonly AGENT_COMMAND="opencode"
-readonly AGENT_NONINTERACTIVE_PARAM="run"
+readonly AGENT_COMMAND="qwen"
+readonly AGENT_NONINTERACTIVE_PARAM=""
 
 
 # Color codes for output
