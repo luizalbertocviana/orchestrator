@@ -229,7 +229,7 @@ EOF
     print_info "Calling agent: $agent_name (attempt $attempt/$MAX_RETRIES)"
     
     local output
-    output=$(opencode prompt "$full_prompt" 2>&1)
+    output=$(opencode run "$full_prompt" 2>&1)
     local exit_code=$?
     
     if [[ $exit_code -eq 0 ]] && [[ -n "$output" ]]; then
