@@ -42,7 +42,11 @@ print_status() {
   local color="$1"
   local label="$2"
   local message="$3"
-  printf "${color}[${label}]${message}${COLOR_RESET}\n" >&2
+
+  local timestamp
+  timestamp=$(date +"%Y-%m-%d %H:%M:%S" 2>/dev/null || date -u +"%Y-%m-%d %H:%M:%S")
+
+  printf "${color}${timestamp} [${label}] ${message}${COLOR_RESET}\n" >&2
 }
 
 print_info() {
