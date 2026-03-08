@@ -22,12 +22,8 @@ set -o pipefail
 # CONFIGURATION & CONSTANTS
 ################################################################################
 
-readonly SCRIPT_NAME="$(basename "$0")"
-readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly MAX_RETRIES=3
 readonly MAX_ITERATIONS=20  # Prevent infinite loops
-readonly PROJECT_COMPLETE_MARKER="PROJECT_COMPLETE"
-readonly PROJECT_HALTED_MARKER="PROJECT_HALTED"
 
 # Color codes for output
 readonly COLOR_RESET='\033[0m'
