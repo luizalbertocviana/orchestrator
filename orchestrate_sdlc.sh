@@ -297,8 +297,6 @@ Instructions:
 - Highlight any clarifications or assumptions made.
 - Log completion to beads when ready: 'bd create "Requirement analysis completed. Ready for design phase."'
 - End by suggesting the next phase, but defer final decision to Orchestrator.
-
-CRITICAL: Only use bd and git commands - do not make up tool names.
 EOF
 }
 
@@ -321,8 +319,6 @@ Instructions:
 - Break down design into implementable components with clear interfaces.
 - Log completion when ready: 'bd create "System design completed. Ready for development phase."'
 - End by suggesting the Development phase, but defer final decision to Orchestrator.
-
-CRITICAL: Only use bd and git commands - do not make up tool names.
 EOF
 }
 
@@ -334,7 +330,7 @@ Your responsibilities:
 1. Review design documents, architecture, and data models.
 2. Implement code for assigned components/modules based on design specs.
 3. Follow the technology stack and architecture decided by the Architect.
-4. Write clean, well-commented, and maintainable code.
+4. Write clean, well-commented, and maintainable code: clean code, object calisthenics, etc.
 5. Create unit tests for your code as you develop.
 
 Instructions:
@@ -347,8 +343,6 @@ Instructions:
 - Report any blockers or design issues via beads: 'bd create "BLOCKER: [issue]"'.
 - Log completion when ready: 'bd create "Code implementation completed. Ready for testing."'
 - End by suggesting the Testing phase, but defer final decision to Orchestrator.
-
-CRITICAL: Only use bd and git commands - do not make up tool names.
 EOF
 }
 
@@ -374,8 +368,6 @@ Instructions:
 - List all bugs found, categorized by severity (critical, major, minor).
 - Log completion when ready: 'bd create "Testing phase completed. [X] bugs found and logged."'
 - End by suggesting next phase (Deployment if all critical bugs resolved, else Development if major bugs found).
-
-CRITICAL: Only use bd and git commands - do not make up tool names.
 EOF
 }
 
@@ -402,8 +394,6 @@ Instructions:
 - Provide deployment checklist and verification steps.
 - Log completion when ready: 'bd create "Deployment to production completed successfully. Version [X] live."'
 - End by suggesting Maintenance phase, but defer final decision to Orchestrator.
-
-CRITICAL: Only use bd and git commands - do not make up tool names.
 EOF
 }
 
@@ -430,8 +420,6 @@ Instructions:
 - Provide maintenance status report (issues resolved, improvements identified, code quality metrics).
 - Log completion when ready: 'bd create "Maintenance review completed. System stable."'
 - End by suggesting next phase (Refinement if improvements needed, else continue maintenance).
-
-CRITICAL: Only use bd and git commands - do not make up tool names.
 EOF
 }
 
@@ -458,8 +446,6 @@ Instructions:
 - Recommend whether to continue maintenance, start new development cycle, or archive project.
 - Log final status: 'bd create "Project analysis complete. Recommendations logged."'
 - End by suggesting next phase, but defer final decision to Orchestrator.
-
-CRITICAL: Only use bd and git commands - do not make up tool names.
 EOF
 }
 
