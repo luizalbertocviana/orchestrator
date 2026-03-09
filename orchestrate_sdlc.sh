@@ -176,37 +176,102 @@ get_git_log() {
 check_for_blockers() {
   local beads_output
   beads_output=$(get_beads_state)
-  
+
   if echo "$beads_output" | grep -i -E "(BLOCKER|CRITICAL|ERROR)" > /dev/null; then
     return 0  # Blockers found
   fi
   return 1  # No blockers
 }
 
-# Get list of blockers
-list_blockers() {
-  local beads_output
-  beads_output=$(get_beads_state)
-  echo "$beads_output" | grep -i -E "(BLOCKER|CRITICAL|ERROR)"
-}
+################################################################################
+# MESSAGING SYSTEM FUNCTIONS
+################################################################################
 
-# Determine which phase is currently complete
-get_completed_phases() {
-  local beads_output
-  beads_output=$(get_beads_state)
-  echo "$beads_output" | grep -i "completed"
-}
-
-# Check if a specific phase is marked complete
-is_phase_complete() {
-  local phase_name="$1"
-  local beads_output
-  beads_output=$(get_beads_state)
+# Send a message to another agent via beads
+# Usage: send_message "from_agent" "to_agent" "message_content"
+send_message() {
+  local from_agent="$1"
+  local to_agent="$2"
+  local message="$3"
+  local timestamp
+  timestamp=$(date +"%Y-%m-%d %H:%M:%S" 2>/dev/null || date -u +"%Y-%m-%d %H:%M:%S")
   
-  if echo "$beads_output" | grep -i "$phase_name" | grep -i "completed" > /dev/null; then
+  local formatted_message="MESSAGE: [${timestamp}] ${from_agent}→${to_agent}: ${message}"
+  bd create "$formatted_message" 2>/dev/null
+  local exit_code=$?
+  
+  if [[ $exit_code -eq 0 ]]; then
+    print_info "Message sent: ${from_agent}→${to_agent}"
     return 0
+  else
+    print_warning "Failed to send message: ${from_agent}→${to_agent}"
+    return 1
   fi
-  return 1
+}
+
+# Read all messages from beads
+# Returns: filtered list of MESSAGE beads
+get_all_messages() {
+  local beads_output
+  beads_output=$(bd list 2>/dev/null || echo "")
+  
+  if [[ -n "$beads_output" ]]; then
+    echo "$beads_output" | grep "^.*MESSAGE:" || echo ""
+  else
+    echo ""
+  fi
+}
+
+# Get messages addressed to a specific agent
+# Usage: get_messages_for_agent "agent_name"
+get_messages_for_agent() {
+  local target_agent="$1"
+  local all_messages
+  all_messages=$(get_all_messages)
+  
+  if [[ -n "$all_messages" ]]; then
+    # Match messages addressed to the target agent
+    echo "$all_messages" | grep -i "→${target_agent}" || echo ""
+  else
+    echo ""
+  fi
+}
+
+# Get messages from a specific agent
+# Usage: get_messages_from_agent "agent_name"
+get_messages_from_agent() {
+  local source_agent="$1"
+  local all_messages
+  all_messages=$(get_all_messages)
+  
+  if [[ -n "$all_messages" ]]; then
+    # Match messages sent by the source agent
+    echo "$all_messages" | grep -i "${source_agent}→" || echo ""
+  else
+    echo ""
+  fi
+}
+
+# Mark a message as read by closing the bead
+# Usage: mark_message_read <bead_id>
+mark_message_read() {
+  local bead_id="$1"
+  
+  if [[ -n "$bead_id" ]]; then
+    bd close "$bead_id" 2>/dev/null
+    local exit_code=$?
+    
+    if [[ $exit_code -eq 0 ]]; then
+      print_info "Message marked as read: ID $bead_id"
+      return 0
+    else
+      print_warning "Failed to mark message as read: ID $bead_id"
+      return 1
+    fi
+  else
+    print_warning "No bead ID provided for mark_message_read"
+    return 1
+  fi
 }
 
 ################################################################################
@@ -301,6 +366,13 @@ Instructions:
 - Highlight any clarifications or assumptions made.
 - Log completion to beads when ready: 'bd create "Requirement analysis completed. Ready for design phase."'
 - End by suggesting the next phase, but defer final decision to Orchestrator.
+
+INTER-AGENT MESSAGING:
+- To send a message to another agent, use: bd create "MESSAGE: [Requirements Analyst]→[Architect/Designer]: <your message>"
+- Example: bd create "MESSAGE: [Requirements Analyst]→[Architect/Designer]: Please review requirement #3 - it may impact architecture decisions"
+- Check for messages addressed to you: Look for beads containing "→Requirements Analyst" or "→[Requirements Analyst]" in `bd list` output
+- Mark messages as read after processing: `bd close <message_id>`
+- Send clarification requests to other agents when needed via the messaging system
 EOF
 }
 
@@ -323,6 +395,13 @@ Instructions:
 - Break down design into implementable components with clear interfaces.
 - Log completion when ready: 'bd create "System design completed. Ready for development phase."'
 - End by suggesting the Development phase, but defer final decision to Orchestrator.
+
+INTER-AGENT MESSAGING:
+- To send a message to another agent, use: bd create "MESSAGE: [Architect/Designer]→[Developer]: <your message>"
+- Example: bd create "MESSAGE: [Architect/Designer]→[Developer]: Module X should use the Repository pattern as per design doc"
+- Check for messages addressed to you: Look for beads containing "→Architect" or "→[Architect/Designer]" in `bd list` output
+- Mark messages as read after processing: `bd close <message_id>`
+- Send clarifications to Requirements Analyst if design reveals requirement gaps
 EOF
 }
 
@@ -347,6 +426,13 @@ Instructions:
 - Report any blockers or design issues via beads: 'bd create "BLOCKER: [issue]"'.
 - Log completion when ready: 'bd create "Code implementation completed. Ready for testing."'
 - End by suggesting the Testing phase, but defer final decision to Orchestrator.
+
+INTER-AGENT MESSAGING:
+- To send a message to another agent, use: bd create "MESSAGE: [Developer]→[Architect/Designer]: <your message>"
+- Example: bd create "MESSAGE: [Developer]→[Architect/Designer]: Design pattern X is causing issues, can we discuss alternative?"
+- Check for messages addressed to you: Look for beads containing "→Developer" or "→[Developer]" in `bd list` output
+- Mark messages as read after processing: `bd close <message_id>`
+- Send bug fix notifications to Tester: bd create "MESSAGE: [Developer]→[Tester]: Bug #123 fixed, ready for re-testing"
 EOF
 }
 
@@ -372,6 +458,13 @@ Instructions:
 - List all bugs found, categorized by severity (critical, major, minor).
 - Log completion when ready: 'bd create "Testing phase completed. [X] bugs found and logged."'
 - End by suggesting next phase (Deployment if all critical bugs resolved, else Development if major bugs found).
+
+INTER-AGENT MESSAGING:
+- To send a message to another agent, use: bd create "MESSAGE: [Tester]→[Developer]: <your message>"
+- Example: bd create "MESSAGE: [Tester]→[Developer]: CRITICAL - Bug #45 found in module X, see beads for details"
+- Check for messages addressed to you: Look for beads containing "→Tester" or "→[Tester]" in `bd list` output
+- Mark messages as read after processing: `bd close <message_id>`
+- Notify Deployer when testing is complete: bd create "MESSAGE: [Tester]→[Deployer]: All tests passed, ready for deployment"
 EOF
 }
 
@@ -398,6 +491,13 @@ Instructions:
 - Provide deployment checklist and verification steps.
 - Log completion when ready: 'bd create "Deployment to production completed successfully. Version [X] live."'
 - End by suggesting Maintenance phase, but defer final decision to Orchestrator.
+
+INTER-AGENT MESSAGING:
+- To send a message to another agent, use: bd create "MESSAGE: [Deployer]→[Maintainer/Reviewer]: <your message>"
+- Example: bd create "MESSAGE: [Deployer]→[Maintainer/Reviewer]: Version 1.0 deployed to production, monitoring required"
+- Check for messages addressed to you: Look for beads containing "→Deployer" or "→[Deployer]" in `bd list` output
+- Mark messages as read after processing: `bd close <message_id>`
+- Notify team of deployment status: bd create "MESSAGE: [Deployer]→[All]: Deployment successful, system live"
 EOF
 }
 
@@ -424,6 +524,13 @@ Instructions:
 - Provide maintenance status report (issues resolved, improvements identified, code quality metrics).
 - Log completion when ready: 'bd create "Maintenance review completed. System stable."'
 - End by suggesting next phase (Refinement if improvements needed, else continue maintenance).
+
+INTER-AGENT MESSAGING:
+- To send a message to another agent, use: bd create "MESSAGE: [Maintainer/Reviewer]→[Refiner]: <your message>"
+- Example: bd create "MESSAGE: [Maintainer/Reviewer]→[Refiner]: Performance degradation detected in module X, needs optimization"
+- Check for messages addressed to you: Look for beads containing "→Maintainer" or "→[Maintainer/Reviewer]" in `bd list` output
+- Mark messages as read after processing: `bd close <message_id>`
+- Notify team of incidents: bd create "MESSAGE: [Maintainer/Reviewer]→[All]: INCIDENT - Production issue #78 detected"
 EOF
 }
 
@@ -450,6 +557,13 @@ Instructions:
 - Recommend whether to continue maintenance, start new development cycle, or archive project.
 - Log final status: 'bd create "Project analysis complete. Recommendations logged."'
 - End by suggesting next phase, but defer final decision to Orchestrator.
+
+INTER-AGENT MESSAGING:
+- To send a message to another agent, use: bd create "MESSAGE: [Refiner]→[Requirements Analyst]: <your message>"
+- Example: bd create "MESSAGE: [Refiner]→[Requirements Analyst]: Next iteration should focus on performance improvements identified in analysis"
+- Check for messages addressed to you: Look for beads containing "→Refiner" or "→[Refiner]" in `bd list` output
+- Mark messages as read after processing: `bd close <message_id>`
+- Send improvement recommendations to relevant agents via messages
 EOF
 }
 
@@ -461,7 +575,8 @@ Your responsibilities:
 1. Query current project state from beads to assess progress and blockers.
 2. Determine which agent should be activated next based on phase completion and project needs.
 3. Handle errors and recovery by identifying what went wrong and which agent can resolve it.
-4. Output the next agent to activate, or signal completion/halt.
+4. Monitor inter-agent messages to ensure communication flow.
+5. Output the next agent to activate, or signal completion/halt.
 
 DECISION LOGIC:
 - If no phases complete: Activate Requirements Analyst
@@ -493,18 +608,31 @@ EOF
 ################################################################################
 
 # Build context for agent from current project state
+# Usage: build_agent_context "agent_name"
 build_agent_context() {
+  local agent_name="$1"
   local beads_state
   local git_status
   local git_log
-  
+  local messages
+
   beads_state=$(get_beads_state)
   git_status=$(get_git_status)
   git_log=$(get_git_log)
   
+  # Get messages addressed to this agent
+  if [[ -n "$agent_name" ]]; then
+    messages=$(get_messages_for_agent "$agent_name")
+  else
+    messages=""
+  fi
+
   cat <<EOF
 === BEADS TASKS ===
 $beads_state
+
+=== INTER-AGENT MESSAGES (addressed to you) ===
+${messages:-No new messages}
 
 === GIT STATUS ===
 $git_status
@@ -623,64 +751,69 @@ main() {
   # Main orchestration loop
   local iteration=0
   local project_status="RUNNING"
-  
+
   while [[ "$project_status" == "RUNNING" ]] && [[ $iteration -lt $MAX_ITERATIONS ]]; do
     ((iteration++))
     print_header "ITERATION $iteration"
-    
-    # Build context from current state
-    local context
-    context=$(build_agent_context)
-    
+
+    # Build context for orchestrator (no agent-specific messages)
+    local orchestrator_context
+    orchestrator_context=$(build_agent_context "Orchestrator")
+
     # Get orchestrator decision
     local next_agent
-    next_agent=$(run_orchestrator "$context")
-    
+    next_agent=$(run_orchestrator "$orchestrator_context")
+
     if [[ $? -ne 0 ]]; then
       print_error "Orchestrator decision failed"
       project_status="HALTED"
       break
     fi
-    
+
     # Handle project completion or halt signals
     if [[ "$next_agent" == "PROJECT_COMPLETE" ]]; then
       print_header "PROJECT COMPLETION"
       print_success "All phases completed successfully!"
-      
+
       # Final status
       local final_beads
       final_beads=$(get_beads_state)
       print_info "Final project state:\n$final_beads"
-      
+
       project_status="COMPLETE"
       break
     fi
-    
+
     if [[ "$next_agent" == "PROJECT_HALTED"* ]]; then
       print_error "Project halted: $next_agent"
       project_status="HALTED"
       break
     fi
-    
+
     # Activate the determined agent
     print_header "ACTIVATING AGENT: $next_agent"
-    local agent_output
-    agent_output=$(activate_agent "$next_agent" "$context")
     
+    # Build context specific to the activated agent (includes their messages)
+    local agent_context
+    agent_context=$(build_agent_context "$next_agent")
+    
+    local agent_output
+    agent_output=$(activate_agent "$next_agent" "$agent_context")
+
     if [[ $? -ne 0 ]]; then
       print_error "Agent activation failed: $next_agent"
       log_to_beads "ERROR: Agent $next_agent failed. Iteration $iteration."
-      
+
       # Continue to next iteration for error handling
       continue
     fi
-    
+
     # Output agent results
     print_info "Agent $next_agent completed:\n$agent_output"
-    
+
     # Attempt to commit changes
     commit_changes "$next_agent" "Completed phase" || print_warning "Could not commit changes"
-    
+
     # Brief pause before next iteration
     sleep 1
   done
