@@ -23,8 +23,8 @@ set -o pipefail
 ################################################################################
 
 readonly MAX_RETRIES=3
-readonly MAX_ITERATIONS=20  # Prevent infinite loops
-readonly AGENT_TIMEOUT_LIMIT=600s
+readonly MAX_ITERATIONS=24  # Prevent infinite loops
+readonly AGENT_TIMEOUT_LIMIT=1200s
 readonly AGENT_COMMAND="qwen"
 readonly AGENT_NONINTERACTIVE_PARAM="-y"
 
