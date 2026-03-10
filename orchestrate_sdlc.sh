@@ -660,6 +660,7 @@ Your responsibilities:
 5. Ensure the master branch tells a coherent development story.
 
 Instructions:
+- Check complete git logs to ensure master branch tells a coherent development story.
 - Check status: Run 'git status' to verify repository state.
 - Checkout master: Run 'git checkout master' (or 'git checkout main' if that's the default).
 - Fetch remote: Run 'git fetch' to update remote tracking branches.
