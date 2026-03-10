@@ -414,12 +414,6 @@ commit_changes() {
   fi
 }
 
-# Log action to beads
-log_to_beads() {
-  local message="$1"
-  bd create "$message" 2>/dev/null || print_warning "Failed to log to beads: $message"
-}
-
 ################################################################################
 # AGENT PROMPTS
 ################################################################################
@@ -1130,7 +1124,6 @@ main() {
 
     if [[ $? -ne 0 ]]; then
       print_error "Agent activation failed: $next_agent"
-      log_to_beads "ERROR: Agent $next_agent failed. Iteration $iteration."
 
       # Continue to next iteration for error handling
       continue
@@ -1152,10 +1145,8 @@ main() {
     if [[ $? -eq 0 ]] && [[ -n "$git_maintainer_output" ]]; then
       print_info "Git Maintainer completed:\n$git_maintainer_output"
       # Log git maintenance to beads
-      log_to_beads "Git: Iteration $iteration - Repository maintenance completed"
     else
       print_warning "Git Maintainer failed - repository state may need attention"
-      log_to_beads "GIT ISSUE: Git Maintainer failed during iteration $iteration"
     fi
 
     # Brief pause before next iteration
