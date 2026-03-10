@@ -1132,23 +1132,6 @@ main() {
     # Output agent results
     print_info "Agent $next_agent completed:\n$agent_output"
 
-    # Attempt to commit changes
-    commit_changes "$next_agent" "Completed phase" || print_warning "Could not commit changes"
-
-    # Invoke Git Maintainer to ensure repository hygiene and checkout master
-    print_header "GIT MAINTENANCE"
-    local git_maintainer_context
-    git_maintainer_context=$(build_agent_context "Git Maintainer")
-    local git_maintainer_output
-    git_maintainer_output=$(activate_agent "Git Maintainer" "$git_maintainer_context")
-    
-    if [[ $? -eq 0 ]] && [[ -n "$git_maintainer_output" ]]; then
-      print_info "Git Maintainer completed:\n$git_maintainer_output"
-      # Log git maintenance to beads
-    else
-      print_warning "Git Maintainer failed - repository state may need attention"
-    fi
-
     # Brief pause before next iteration
     sleep 1
   done
