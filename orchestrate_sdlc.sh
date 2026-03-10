@@ -25,9 +25,16 @@ set -o pipefail
 readonly MAX_RETRIES=3
 readonly MAX_ITERATIONS=24  # Prevent infinite loops
 readonly AGENT_TIMEOUT_LIMIT=1200s
-readonly AGENT_COMMAND="qwen"
-readonly AGENT_NONINTERACTIVE_PARAM="-y"
 
+# Agent rotation configuration
+readonly AGENTS=("opencode" "gemini" "qwen")
+declare -A AGENT_FLAGS=(
+  ["opencode"]="run"
+  ["gemini"]="-y -p"
+  ["qwen"]="-y"
+)
+declare -a AVAILABLE_AGENTS=()
+AGENT_ROTATION_INDEX=0
 
 # Color codes for output
 readonly COLOR_RESET='\033[0m'
@@ -74,9 +81,61 @@ print_header() {
   printf "${COLOR_BOLD}\n========== $title ==========${COLOR_RESET}\n" >&2
 }
 
+# Check agent availability and populate AVAILABLE_AGENTS array
+# Warns once at startup for missing agents
+check_agent_availability() {
+  print_info "Checking available cli agents..."
+  
+  local missing=()
+  
+  for agent in "${AGENTS[@]}"; do
+    if command -v "$agent" &> /dev/null; then
+      AVAILABLE_AGENTS+=("$agent")
+      print_info "Found: $agent"
+    else
+      missing+=("$agent")
+    fi
+  done
+  
+  if [[ ${#missing[@]} -gt 0 ]]; then
+    print_warning "Missing cli agents: ${missing[*]} (skipping from rotation)"
+  fi
+  
+  if [[ ${#AVAILABLE_AGENTS[@]} -eq 0 ]]; then
+    print_error "No cli agents available. Please install at least one of: ${AGENTS[*]}"
+    return 1
+  fi
+  
+  print_info "Using sequential rotation across ${#AVAILABLE_AGENTS[@]} available cli agent(s): ${AVAILABLE_AGENTS[*]}"
+  return 0
+}
+
+# Get the next agent in sequential rotation
+# Returns: agent name via echo
+get_next_agent_sequential() {
+  if [[ ${#AVAILABLE_AGENTS[@]} -eq 0 ]]; then
+    return 1
+  fi
+  
+  local agent_index=$((AGENT_ROTATION_INDEX % ${#AVAILABLE_AGENTS[@]}))
+  local selected_agent="${AVAILABLE_AGENTS[$agent_index]}"
+  
+  ((AGENT_ROTATION_INDEX++))
+  
+  echo "$selected_agent"
+}
+
+# Get the non-interactive flag for a specific agent
+# Usage: get_agent_flag "agent_name"
+# Returns: flag string via echo
+get_agent_flag() {
+  local agent="$1"
+  echo "${AGENT_FLAGS[$agent]:--y}"
+}
+
 # Verify that required tools are available
 verify_tools() {
-  local tools=("git" "bd" "jq" "$AGENT_COMMAND")
+  local tools=("git" "bd" "jq")
   local missing=()
 
   for tool in "${tools[@]}"; do
@@ -279,11 +338,12 @@ mark_message_read() {
 ################################################################################
 
 # Call an AI agent with a prompt and context
+# Uses sequential rotation across available agents
 call_agent() {
   local agent_name="$1"
   local prompt="$2"
   local context="$3"
-  
+
   local full_prompt
   full_prompt=$(cat <<EOF
 $prompt
@@ -295,28 +355,44 @@ Please proceed with your role and responsibilities.
 EOF
 )
 
+  # Get next agent from rotation
+  local current_agent
+  current_agent=$(get_next_agent_sequential)
+  local agent_flag
+  agent_flag=$(get_agent_flag "$current_agent")
+  
+  print_info "Selected cli agent: $current_agent (rotation index: $((AGENT_ROTATION_INDEX - 1)))"
+
   local attempt=1
+  local agents_tried=()
+  
   while [[ $attempt -le $MAX_RETRIES ]]; do
-    print_info "Calling agent: $agent_name (attempt $attempt/$MAX_RETRIES)"
-    
+    agents_tried+=("$current_agent")
+    print_info "Calling cli agent: $current_agent [$agent_name] (attempt $attempt/$MAX_RETRIES)"
+
     local output
-    output=$(timeout $AGENT_TIMEOUT_LIMIT $AGENT_COMMAND $AGENT_NONINTERACTIVE_PARAM "$full_prompt" 2>&1)
+    output=$(timeout $AGENT_TIMEOUT_LIMIT "$current_agent" "$agent_flag" "$full_prompt" 2>&1)
     local exit_code=$?
-    
+
     if [[ $exit_code -eq 0 ]] && [[ -n "$output" ]]; then
       echo "$output"
       return 0
     fi
+
+    print_warning "cli agent $current_agent failed with exit code $exit_code"
     
-    print_warning "Agent call failed with exit code $exit_code"
-    ((attempt++))
-    
-    if [[ $attempt -le $MAX_RETRIES ]]; then
-      sleep 2  # Brief pause before retry
+    # Try next agent in rotation on failure
+    if [[ $attempt -lt $MAX_RETRIES ]]; then
+      current_agent=$(get_next_agent_sequential)
+      agent_flag=$(get_agent_flag "$current_agent")
+      print_info "Will retry with: $current_agent"
+      sleep 2
     fi
+    
+    ((attempt++))
   done
-  
-  print_error "Agent $agent_name failed after $MAX_RETRIES attempts"
+
+  print_error "All agent attempts failed. Tried: ${agents_tried[*]}"
   return 1
 }
 
@@ -989,14 +1065,15 @@ run_orchestrator() {
 
 main() {
   print_header "MULTI-AGENT SDLC ORCHESTRATION SYSTEM"
-  
+
   # Verify prerequisites
   print_info "Verifying prerequisites..."
+  check_agent_availability || exit 1
   verify_tools || exit 1
   verify_git_repo || exit 1
   verify_specs_file
   initialize_beads
-  
+
   print_success "All prerequisites verified"
   
   # Main orchestration loop
