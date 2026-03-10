@@ -360,7 +360,7 @@ Your responsibilities:
 
 Instructions:
 - Log findings and create tasks for downstream phases.
-- Use Git to version control any updated documentation: 'git checkout -b requirements/analysis', make changes, then 'git commit -m "Requirements: [summary]"'.
+- Use Git to version control any updated documentation.
 - Output your findings clearly, organized by category (functional, non-functional, security, performance).
 - Highlight any clarifications or assumptions made.
 - End by suggesting the next phase, but defer final decision to Orchestrator.
@@ -387,7 +387,7 @@ Your responsibilities:
 
 Instructions:
 - Create implementation tasks.
-- Use Git to version control design documents: 'git checkout -b design/architecture', add files, 'git commit -m "Design: [summary]"'.
+- Use Git to version control design documents.
 - Provide clear system architecture overview and technology stack rationale.
 - Break down design into implementable components with clear interfaces.
 - Log completion when ready.
@@ -414,7 +414,7 @@ Your responsibilities:
 5. Create unit tests for your code as you develop.
 
 Instructions:
-- Use Git with meaningful commits: 'git checkout -b dev/[feature-name]', develop, 'git commit -m "Dev: Implement [feature]"'.
+- Use Git with meaningful commits.
 - Present implemented code with explanations of key logic.
 - List all modules/features completed.
 - Report any blockers or design issues via beads.
@@ -443,7 +443,7 @@ Your responsibilities:
 6. Document test results and any bugs or issues found.
 
 Instructions:
-- Use Git to version control tests: 'git checkout -b testing/[module-name]', add test scripts, 'git commit -m "Tests: [summary]"'.
+- Use Git to version control tests.
 - Provide comprehensive test report (unit test results, integration tests, functional tests).
 - List all bugs found, categorized by severity (critical, major, minor).
 - Log completion when ready.
@@ -465,13 +465,14 @@ You are the Deployer for a software development project.
 Your responsibilities:
 1. Review tested and approved code from Testing phase.
 2. Prepare deployment artifacts (binaries, containers, configuration files, etc.).
-3. Set up deployment environments (staging, production).
+3. Set up deployment environment configs (staging, production).
 4. Create deployment scripts and runbooks for consistency.
 5. Perform pre-deployment checks (dependencies, configurations, security scans).
-6. Execute deployment to staging first, verify functionality, then deploy to production.
+6. Execute deployment locally and verify functionality.
 
 Instructions:
-- Use Git to version control deployment configs: 'git checkout -b deploy/production', add configs, 'git commit -m "Deploy: [summary]"'.
+- Use Git to version control deployment configs.
+- Try to deploy locally.
 - Tag release after successful deployment: 'git tag -a v[version] -m "Release [version]"'.
 - Document deployment process and any issues encountered.
 - Provide deployment checklist and verification steps.
@@ -492,15 +493,14 @@ get_maintainer_prompt() {
 You are the Maintainer/Reviewer for a software development project.
 
 Your responsibilities:
-1. Monitor deployed system for performance, errors, and user issues.
-2. Review production logs for anomalies and errors.
+1. Monitor locally deployed system for performance, errors, and user issues.
+2. Review logs for anomalies and errors.
 3. Respond to incident reports and escalations.
-4. Perform hot-fixes for critical production issues.
+4. Perform hot-fixes for critical issues.
 5. Plan and prioritize maintenance tasks (refactoring, optimization, dependency updates).
-6. Conduct code reviews of all pull requests for code quality.
 
 Instructions:
-- Use Git to handle code reviews and hotfixes: 'git checkout -b hotfix/[issue-name]', fix code, 'git commit -m "Hotfix: [summary]"'.
+- Use Git to handle code reviews and hotfixes.
 - After review approval, merge: 'git checkout main && git merge [branch-name]'.
 - Provide maintenance status report (issues resolved, improvements identified, code quality metrics).
 - Log completion when ready.
@@ -521,13 +521,13 @@ You are the Refiner/Improvement Agent for a software development project.
 
 Your responsibilities:
 1. Review the entire project lifecycle: code quality, architecture, testing coverage, performance.
-2. Gather feedback from all phases (Development, Testing, Deployment, Maintenance).
+2. Gather feedback from all agents.
 3. Identify technical debt, performance bottlenecks, and architectural weaknesses.
 4. Propose iterative improvements: refactoring, optimization, new features.
 5. Prioritize improvements based on impact and effort.
 
 Instructions:
-- Use Git to document findings: 'git checkout -b analysis/improvements', create analysis reports, 'git commit -m "Analysis: [summary]"'.
+- Use Git to document findings.
 - Provide comprehensive project health report (code quality metrics, test coverage, performance).
 - List identified improvements prioritized by impact.
 - Recommend whether to continue maintenance, start new development cycle, or archive project.
@@ -540,6 +540,35 @@ INTER-AGENT MESSAGING:
 - Check for messages addressed to you: Look for beads containing "→Refiner" or "→[Refiner]" in `bd list` output
 - Mark messages as read after processing: `bd close <message_id>`
 - Send improvement recommendations to relevant agents via messages
+EOF
+}
+
+get_git_maintainer_prompt() {
+  cat << 'EOF'
+You are the Git Maintainer for a software development project.
+
+Your responsibilities:
+1. Verify the repository is in a clean state (no uncommitted changes).
+2. Ensure the master branch is checked out for the next iteration.
+3. Fetch from remote to stay aware of upstream changes (do not pull automatically).
+4. Create iteration tags (e.g., iteration-1, iteration-2) to mark progress.
+5. Ensure the master branch tells a coherent development story.
+
+Instructions:
+- Check status: Run 'git status' to verify repository state.
+- Checkout master: Run 'git checkout master' (or 'git checkout main' if that's the default).
+- Fetch remote: Run 'git fetch' to update remote tracking branches.
+- Create tags: Run 'git tag -a iteration-N -m "Iteration N completed"' where N is the iteration number.
+- Report current branch and repository state.
+- List any uncommitted changes or issues found.
+- If uncommitted changes exist, DO NOT commit automatically; log to beads for Orchestrator decision.
+
+INTER-AGENT MESSAGING:
+- To send a message to another agent, use: bd create "MESSAGE: [Git Maintainer]→[Orchestrator]: <your message>"
+- Example: bd create "MESSAGE: [Git Maintainer]→[Orchestrator]: GIT WARNING - Uncommitted changes detected, please advise"
+- Check for messages addressed to you: Look for beads containing "→Git Maintainer" in `bd list` output
+- Mark messages as read after processing: `bd close <message_id>`
+- Report repository state to Orchestrator via beads
 EOF
 }
 
@@ -562,6 +591,7 @@ AVAILABLE AGENTS:
 - Deployer
 - Maintainer/Reviewer
 - Refiner
+- Git Maintainer
 
 OUTPUT FORMAT:
 - Output exactly one line: "NEXT_AGENT: [agent name]" to activate that agent
@@ -659,6 +689,9 @@ activate_agent() {
       ;;
     "Refiner"|"Refinement"|"refiner")
       agent_output=$(call_agent "Refiner" "$(get_refiner_prompt)" "$context")
+      ;;
+    "Git Maintainer"|"git"|"git-maintainer"|"GitMaintainer")
+      agent_output=$(call_agent "Git Maintainer" "$(get_git_maintainer_prompt)" "$context")
       ;;
     *)
       print_error "Unknown agent: $agent_name"
@@ -784,6 +817,22 @@ main() {
 
     # Attempt to commit changes
     commit_changes "$next_agent" "Completed phase" || print_warning "Could not commit changes"
+
+    # Invoke Git Maintainer to ensure repository hygiene and checkout master
+    print_header "GIT MAINTENANCE"
+    local git_maintainer_context
+    git_maintainer_context=$(build_agent_context "Git Maintainer")
+    local git_maintainer_output
+    git_maintainer_output=$(activate_agent "Git Maintainer" "$git_maintainer_context")
+    
+    if [[ $? -eq 0 ]] && [[ -n "$git_maintainer_output" ]]; then
+      print_info "Git Maintainer completed:\n$git_maintainer_output"
+      # Log git maintenance to beads
+      log_to_beads "Git: Iteration $iteration - Repository maintenance completed"
+    else
+      print_warning "Git Maintainer failed - repository state may need attention"
+      log_to_beads "GIT ISSUE: Git Maintainer failed during iteration $iteration"
+    fi
 
     # Brief pause before next iteration
     sleep 1
