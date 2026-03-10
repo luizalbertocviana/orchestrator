@@ -823,20 +823,86 @@ $(pwd)
 EOF
 }
 
+# Strip markdown formatting and common artifacts from text
+# Usage: strip_markdown "$text"
+strip_markdown() {
+  local text="$1"
+  
+  # Remove bold markers (**) - must be done before single asterisk removal
+  text=$(echo "$text" | sed 's/\*\*//g')
+  # Remove italic markers (*) - standalone asterisks
+  text=$(echo "$text" | sed 's/\*//g')
+  # Remove underline markers (__ or _) only when used as formatting (at word boundaries)
+  # Preserve underscores within identifiers like NEXT_AGENT
+  text=$(echo "$text" | sed 's/\b__\b//g' | sed 's/\b_\b//g')
+  # Remove inline code markers (`)
+  text=$(echo "$text" | sed 's/`//g')
+  # Remove extra whitespace
+  text=$(echo "$text" | sed 's/[[:space:]]\+/ /g' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+  
+  echo "$text"
+}
+
 # Parse orchestrator output to determine next agent
+# Robust to markdown formatting variations like **NEXT_AGENT:** or *NEXT_AGENT:*
 parse_orchestrator_output() {
   local output="$1"
+  local normalized_output
   
-  if echo "$output" | grep -i "PROJECT_COMPLETE" > /dev/null; then
+  # First, normalize the output by stripping markdown formatting
+  normalized_output=$(strip_markdown "$output")
+  
+  # Check for project completion/halt signals first
+  if echo "$normalized_output" | grep -i "PROJECT_COMPLETE" > /dev/null; then
     echo "PROJECT_COMPLETE"
-  elif echo "$output" | grep -i "PROJECT_HALTED" > /dev/null; then
+    return 0
+  elif echo "$normalized_output" | grep -i "PROJECT_HALTED" > /dev/null; then
     echo "PROJECT_HALTED"
-  elif echo "$output" | grep -i "NEXT_AGENT:" > /dev/null; then
-    # Extract agent name from "NEXT_AGENT: [name]"
-    echo "$output" | grep -i "NEXT_AGENT:" | sed 's/.*NEXT_AGENT:[[:space:]]*//i' | head -1
-  else
-    echo ""
+    return 0
   fi
+  
+  # Try to extract NEXT_AGENT with flexible pattern matching
+  # Matches: NEXT_AGENT: AgentName, NEXT_AGENT : AgentName, etc.
+  local next_agent
+  next_agent=$(echo "$normalized_output" | grep -ioE "NEXT_AGENT[[:space:]]*:[[:space:]]*[A-Za-z][A-Za-z/ ]*" | sed 's/.*NEXT_AGENT[[:space:]]*:[[:space:]]*//i' | head -1)
+  
+  if [[ -n "$next_agent" ]]; then
+    # Trim any trailing whitespace
+    next_agent=$(echo "$next_agent" | sed 's/[[:space:]]*$//')
+    echo "$next_agent"
+    return 0
+  fi
+  
+  # Fallback: Try to find agent names directly from the known agent list
+  # This handles cases where orchestrator outputs just the agent name without NEXT_AGENT prefix
+  local known_agents=(
+    "Requirements Analyst"
+    "Architect/Designer"
+    "Developer"
+    "Tester"
+    "Deployer"
+    "Maintainer/Reviewer"
+    "Documentation Specialist"
+    "Refiner"
+    "Git Maintainer"
+  )
+  
+  for agent in "${known_agents[@]}"; do
+    # Case-insensitive match, word boundary aware
+    if echo "$normalized_output" | grep -qi "\\b${agent}\\b"; then
+      # Prefer lines that look like directives (start with agent name or contain common directive words)
+      local matched_line
+      matched_line=$(echo "$normalized_output" | grep -i "\\b${agent}\\b" | head -1)
+      if [[ -n "$matched_line" ]]; then
+        echo "$agent"
+        return 0
+      fi
+    fi
+  done
+  
+  # No agent found
+  echo ""
+  return 1
 }
 
 # Activate appropriate agent based on orchestrator decision
