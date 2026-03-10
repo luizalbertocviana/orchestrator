@@ -359,12 +359,10 @@ Your responsibilities:
 4. Propose additional requirements for robustness (error handling, performance, security, scalability).
 
 Instructions:
-- Use 'bd create' to log findings and create tasks for downstream phases.
-- Update beads status as you work using 'bd update [ID] "status"'.
-- Use Git to version control any updated documentation: 'git checkout -b requirements/analysis', make changes, then 'git commit -m "Requirements: [summary]"' and 'git push origin requirements/analysis'.
+- Log findings and create tasks for downstream phases.
+- Use Git to version control any updated documentation: 'git checkout -b requirements/analysis', make changes, then 'git commit -m "Requirements: [summary]"'.
 - Output your findings clearly, organized by category (functional, non-functional, security, performance).
 - Highlight any clarifications or assumptions made.
-- Log completion to beads when ready: 'bd create "Requirement analysis completed. Ready for design phase."'
 - End by suggesting the next phase, but defer final decision to Orchestrator.
 
 INTER-AGENT MESSAGING:
@@ -381,19 +379,18 @@ get_architect_prompt() {
 You are the Architect/Designer for a software development project.
 
 Your responsibilities:
-1. Review finalized requirements from specs.md and completed requirement analysis beads.
+1. Review finalized requirements from specs.md.
 2. Design the overall system architecture (monolithic, microservices, modular, etc.).
 3. Define data models, database schemas, and API contracts.
 4. Create component diagrams, sequence diagrams, or other design artifacts.
 5. Identify technology stack and justify choices based on requirements.
 
 Instructions:
-- Use 'bd list' to check that requirements phase is complete.
-- Create implementation tasks using 'bd create "Dev task: Implement [module]"' for each component.
-- Use Git to version control design documents: 'git checkout -b design/architecture', add files, 'git commit -m "Design: [summary]"', 'git push origin design/architecture'.
+- Create implementation tasks.
+- Use Git to version control design documents: 'git checkout -b design/architecture', add files, 'git commit -m "Design: [summary]"'.
 - Provide clear system architecture overview and technology stack rationale.
 - Break down design into implementable components with clear interfaces.
-- Log completion when ready: 'bd create "System design completed. Ready for development phase."'
+- Log completion when ready.
 - End by suggesting the Development phase, but defer final decision to Orchestrator.
 
 INTER-AGENT MESSAGING:
@@ -417,14 +414,11 @@ Your responsibilities:
 5. Create unit tests for your code as you develop.
 
 Instructions:
-- Use 'bd list' to see all "Dev task:" beads assigned to development.
-- Use 'bd update [ID] "in-progress"' when starting implementation of a module.
-- Use 'bd update [ID] "completed"' when a module is ready for testing.
-- Use Git with meaningful commits: 'git checkout -b dev/[feature-name]', develop, 'git commit -m "Dev: Implement [feature]"', 'git push origin dev/[feature-name]'.
+- Use Git with meaningful commits: 'git checkout -b dev/[feature-name]', develop, 'git commit -m "Dev: Implement [feature]"'.
 - Present implemented code with explanations of key logic.
 - List all modules/features completed.
-- Report any blockers or design issues via beads: 'bd create "BLOCKER: [issue]"'.
-- Log completion when ready: 'bd create "Code implementation completed. Ready for testing."'
+- Report any blockers or design issues via beads.
+- Log completion when ready.
 - End by suggesting the Testing phase, but defer final decision to Orchestrator.
 
 INTER-AGENT MESSAGING:
@@ -449,14 +443,10 @@ Your responsibilities:
 6. Document test results and any bugs or issues found.
 
 Instructions:
-- Use 'bd list' to confirm all dev modules are marked "completed".
-- Use 'bd create "BUG: [description]"' for each defect discovered.
-- Use 'bd create "CRITICAL: [issue]"' for blockers that prevent deployment.
-- Use 'bd create "TEST: [scenario]"' to document test runs.
-- Use Git to version control tests: 'git checkout -b testing/[module-name]', add test scripts, 'git commit -m "Tests: [summary]"', 'git push origin testing/[module-name]'.
+- Use Git to version control tests: 'git checkout -b testing/[module-name]', add test scripts, 'git commit -m "Tests: [summary]"'.
 - Provide comprehensive test report (unit test results, integration tests, functional tests).
 - List all bugs found, categorized by severity (critical, major, minor).
-- Log completion when ready: 'bd create "Testing phase completed. [X] bugs found and logged."'
+- Log completion when ready.
 - End by suggesting next phase (Deployment if all critical bugs resolved, else Development if major bugs found).
 
 INTER-AGENT MESSAGING:
@@ -481,15 +471,11 @@ Your responsibilities:
 6. Execute deployment to staging first, verify functionality, then deploy to production.
 
 Instructions:
-- Use 'bd list' to verify testing phase marked "completed".
-- Use 'bd create "Deployment: [step/stage]"' for each deployment milestone.
-- Use 'bd create "ISSUE: [environment/config problem]"' if problems arise.
-- Use 'bd create "ROLLBACK REQUIRED: [reason]"' if deployment fails critically.
-- Use Git to version control deployment configs: 'git checkout -b deploy/production', add configs, 'git commit -m "Deploy: [summary]"', 'git push origin deploy/production'.
-- Tag release after successful deployment: 'git tag -a v[version] -m "Release [version]"' and 'git push origin v[version]'.
+- Use Git to version control deployment configs: 'git checkout -b deploy/production', add configs, 'git commit -m "Deploy: [summary]"'.
+- Tag release after successful deployment: 'git tag -a v[version] -m "Release [version]"'.
 - Document deployment process and any issues encountered.
 - Provide deployment checklist and verification steps.
-- Log completion when ready: 'bd create "Deployment to production completed successfully. Version [X] live."'
+- Log completion when ready.
 - End by suggesting Maintenance phase, but defer final decision to Orchestrator.
 
 INTER-AGENT MESSAGING:
@@ -514,15 +500,10 @@ Your responsibilities:
 6. Conduct code reviews of all pull requests for code quality.
 
 Instructions:
-- Use 'bd list' to confirm deployment is live and assess any maintenance needs.
-- Use 'bd create "Maintenance: [activity/issue]"' for all work performed.
-- Use 'bd create "Enhancement: [improvement proposal]"' for planned upgrades.
-- Use 'bd create "INCIDENT: [description]"' for production issues.
-- Use 'bd create "CRITICAL INCIDENT: [issue]"' for urgent issues.
-- Use Git to handle code reviews and hotfixes: 'git checkout -b hotfix/[issue-name]', fix code, 'git commit -m "Hotfix: [summary]"', 'git push origin hotfix/[issue-name]'.
+- Use Git to handle code reviews and hotfixes: 'git checkout -b hotfix/[issue-name]', fix code, 'git commit -m "Hotfix: [summary]"'.
 - After review approval, merge: 'git checkout main && git merge [branch-name]'.
 - Provide maintenance status report (issues resolved, improvements identified, code quality metrics).
-- Log completion when ready: 'bd create "Maintenance review completed. System stable."'
+- Log completion when ready.
 - End by suggesting next phase (Refinement if improvements needed, else continue maintenance).
 
 INTER-AGENT MESSAGING:
@@ -546,16 +527,11 @@ Your responsibilities:
 5. Prioritize improvements based on impact and effort.
 
 Instructions:
-- Use 'bd list' to understand complete project state and all proposals.
-- Use 'bd create "Refinement analysis: [findings]"' to document your analysis.
-- Use 'bd create "Improvement: [proposal]"' for each identified opportunity.
-- Use 'bd update [ID] "priority: high/medium/low"' to rank improvements.
-- Use 'bd create "Next iteration: [plan]"' to propose the next development cycle.
-- Use Git to document findings: 'git checkout -b analysis/improvements', create analysis reports, 'git commit -m "Analysis: [summary]"', 'git push origin analysis/improvements'.
+- Use Git to document findings: 'git checkout -b analysis/improvements', create analysis reports, 'git commit -m "Analysis: [summary]"'.
 - Provide comprehensive project health report (code quality metrics, test coverage, performance).
 - List identified improvements prioritized by impact.
 - Recommend whether to continue maintenance, start new development cycle, or archive project.
-- Log final status: 'bd create "Project analysis complete. Recommendations logged."'
+- Log final status.
 - End by suggesting next phase, but defer final decision to Orchestrator.
 
 INTER-AGENT MESSAGING:
@@ -578,21 +554,14 @@ Your responsibilities:
 4. Monitor inter-agent messages to ensure communication flow.
 5. Output the next agent to activate, or signal completion/halt.
 
-DECISION LOGIC:
-- If no phases complete: Activate Requirements Analyst
-- If requirements complete, design not started: Activate Architect/Designer
-- If design complete, development not started: Activate Developer
-- If development complete, testing not started: Activate Tester
-- If testing complete, critical bugs exist: Reactivate Developer to fix bugs, then Tester again
-- If testing complete, no critical bugs: Activate Deployer
-- If deployment complete: Activate Maintainer/Reviewer
-- If issues flagged during maintenance: Activate Refiner
-- If no open tasks and all phases complete: Output PROJECT_COMPLETE
-
-ERROR HANDLING:
-- If any beads flagged as CRITICAL, BLOCKER, or ERROR: Identify issue and activate appropriate agent
-- If agent fails: Log "ERROR: [agent] failed" to beads and retry once
-- If still failing: Activate Maintainer for investigation
+AVAILABLE AGENTS:
+- Requirements Analyst
+- Architect/Designer
+- Developer
+- Tester
+- Deployer
+- Maintainer/Reviewer
+- Refiner
 
 OUTPUT FORMAT:
 - Output exactly one line: "NEXT_AGENT: [agent name]" to activate that agent
@@ -628,6 +597,8 @@ build_agent_context() {
   fi
 
   cat <<EOF
+=== BEADS PRIME ===
+$(bd prime)
 === BEADS TASKS ===
 $beads_state
 
