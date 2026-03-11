@@ -50,7 +50,7 @@ def parse_mark_read(output: str) -> List[str]:
     matches = re.findall(pattern, output, re.IGNORECASE)
     for match in matches:
         # Split by comma and extract bead IDs
-        ids = re.findall(r'beads-[\w]+', match)
+        ids = re.findall(r'[\w]+', match)
         bead_ids.extend(ids)
     return bead_ids
 
