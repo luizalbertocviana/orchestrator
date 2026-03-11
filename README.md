@@ -44,7 +44,7 @@ A complete multi-agent system designed to manage the full cycle of software deve
 ### Prerequisites
 
 - [uv](https://github.com/astral-sh/uv) - Fast Python package and project manager.
-- [beads](https://github.com/google/beads) - Task management for agents.
+- [beads](https://github.com/steveyegge/beads) - Task management for agents.
 - Git - Version control.
 
 ### Installation
