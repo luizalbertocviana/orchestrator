@@ -34,7 +34,6 @@ declare -A AGENT_FLAGS=(
   ["qwen"]="-y"
 )
 declare -a AVAILABLE_AGENTS=()
-AGENT_ROTATION_INDEX=0
 
 # Color codes for output
 readonly COLOR_RESET='\033[0m'
@@ -110,18 +109,19 @@ check_agent_availability() {
   return 0
 }
 
-# Get the next agent in sequential rotation
+# Get the next agent in sequential rotation based on iteration number
+# Usage: get_next_agent_sequential "iteration_number"
 # Returns: agent name via echo
 get_next_agent_sequential() {
+  local iteration="$1"
+
   if [[ ${#AVAILABLE_AGENTS[@]} -eq 0 ]]; then
     return 1
   fi
-  
-  local agent_index=$((AGENT_ROTATION_INDEX % ${#AVAILABLE_AGENTS[@]}))
+
+  local agent_index=$(( (iteration - 1) % ${#AVAILABLE_AGENTS[@]} ))
   local selected_agent="${AVAILABLE_AGENTS[$agent_index]}"
-  
-  ((AGENT_ROTATION_INDEX++))
-  
+
   echo "$selected_agent"
 }
 
@@ -338,11 +338,13 @@ mark_message_read() {
 ################################################################################
 
 # Call an AI agent with a prompt and context
-# Uses sequential rotation across available agents
+# Uses sequential rotation across available agents based on iteration number
+# Usage: call_agent "agent_name" "prompt" "context" "iteration"
 call_agent() {
   local agent_name="$1"
   local prompt="$2"
   local context="$3"
+  local iteration="$4"
 
   local full_prompt
   full_prompt=$(cat <<EOF
@@ -355,17 +357,17 @@ Please proceed with your role and responsibilities.
 EOF
 )
 
-  # Get next agent from rotation
+  # Get next agent from rotation based on iteration
   local current_agent
-  current_agent=$(get_next_agent_sequential)
+  current_agent=$(get_next_agent_sequential "$iteration")
   local agent_flag
   agent_flag=$(get_agent_flag "$current_agent")
-  
-  print_info "Selected cli agent: $current_agent (rotation index: $((AGENT_ROTATION_INDEX - 1)))"
+
+  print_info "Selected cli agent: $current_agent (iteration: $iteration)"
 
   local attempt=1
   local agents_tried=()
-  
+
   while [[ $attempt -le $MAX_RETRIES ]]; do
     agents_tried+=("$current_agent")
     print_info "Calling cli agent: $current_agent [$agent_name] (attempt $attempt/$MAX_RETRIES)"
@@ -380,15 +382,15 @@ EOF
     fi
 
     print_warning "cli agent $current_agent failed with exit code $exit_code"
-    
-    # Try next agent in rotation on failure
+
+    # Try next agent in rotation on failure (use iteration + attempt for retry)
     if [[ $attempt -lt $MAX_RETRIES ]]; then
-      current_agent=$(get_next_agent_sequential)
+      current_agent=$(get_next_agent_sequential $((iteration + attempt)))
       agent_flag=$(get_agent_flag "$current_agent")
       print_info "Will retry with: $current_agent"
       sleep 2
     fi
-    
+
     ((attempt++))
   done
 
@@ -977,45 +979,47 @@ parse_orchestrator_output() {
 }
 
 # Activate appropriate agent based on orchestrator decision
+# Usage: activate_agent "agent_name" "context" "iteration"
 activate_agent() {
   local agent_name="$1"
   local context="$2"
+  local iteration="$3"
   local agent_output
-  
+
   case "$agent_name" in
     "Requirements Analyst"|"analyst")
-      agent_output=$(call_agent "Requirements Analyst" "$(get_requirements_analyst_prompt)" "$context")
+      agent_output=$(call_agent "Requirements Analyst" "$(get_requirements_analyst_prompt)" "$context" "$iteration")
       ;;
     "Architect"|"Designer"|"architect/designer"|"Architect/Designer")
-      agent_output=$(call_agent "Architect/Designer" "$(get_architect_prompt)" "$context")
+      agent_output=$(call_agent "Architect/Designer" "$(get_architect_prompt)" "$context" "$iteration")
       ;;
     "Developer"|"developer")
-      agent_output=$(call_agent "Developer" "$(get_developer_prompt)" "$context")
+      agent_output=$(call_agent "Developer" "$(get_developer_prompt)" "$context" "$iteration")
       ;;
     "Tester"|"tester")
-      agent_output=$(call_agent "Tester" "$(get_tester_prompt)" "$context")
+      agent_output=$(call_agent "Tester" "$(get_tester_prompt)" "$context" "$iteration")
       ;;
     "Deployer"|"deployer")
-      agent_output=$(call_agent "Deployer" "$(get_deployer_prompt)" "$context")
+      agent_output=$(call_agent "Deployer" "$(get_deployer_prompt)" "$context" "$iteration")
       ;;
     "Documentation Specialist"|"Documentation"|"documentation")
-      agent_output=$(call_agent "Documentation Specialist" "$(get_documentation_specialist_prompt)" "$context")
+      agent_output=$(call_agent "Documentation Specialist" "$(get_documentation_specialist_prompt)" "$context" "$iteration")
       ;;
     "Maintainer"|"Maintainer/Reviewer"|"maintainer")
-      agent_output=$(call_agent "Maintainer/Reviewer" "$(get_maintainer_prompt)" "$context")
+      agent_output=$(call_agent "Maintainer/Reviewer" "$(get_maintainer_prompt)" "$context" "$iteration")
       ;;
     "Refiner"|"Refinement"|"refiner")
-      agent_output=$(call_agent "Refiner" "$(get_refiner_prompt)" "$context")
+      agent_output=$(call_agent "Refiner" "$(get_refiner_prompt)" "$context" "$iteration")
       ;;
     "Git Maintainer"|"git"|"git-maintainer"|"GitMaintainer")
-      agent_output=$(call_agent "Git Maintainer" "$(get_git_maintainer_prompt)" "$context")
+      agent_output=$(call_agent "Git Maintainer" "$(get_git_maintainer_prompt)" "$context" "$iteration")
       ;;
     *)
       print_error "Unknown agent: $agent_name"
       return 1
       ;;
   esac
-  
+
   # Return agent output
   if [[ -n "$agent_output" ]]; then
     echo "$agent_output"
@@ -1026,29 +1030,31 @@ activate_agent() {
 }
 
 # Run orchestrator to determine next agent
+# Usage: run_orchestrator "context" "iteration"
 run_orchestrator() {
   local context="$1"
+  local iteration="$2"
   local orchestrator_output
-  
+
   print_header "ORCHESTRATOR DECISION"
-  
-  orchestrator_output=$(call_agent "Orchestrator" "$(get_orchestrator_prompt)" "$context")
-  
+
+  orchestrator_output=$(call_agent "Orchestrator" "$(get_orchestrator_prompt)" "$context" "$iteration")
+
   if [[ $? -ne 0 ]]; then
     print_error "Orchestrator failed to execute"
     return 1
   fi
-  
+
   print_info "Orchestrator output:\n$orchestrator_output"
-  
+
   local next_agent
   next_agent=$(parse_orchestrator_output "$orchestrator_output")
-  
+
   if [[ -z "$next_agent" ]]; then
     print_error "Could not parse orchestrator output"
     return 1
   fi
-  
+
   echo "$next_agent"
   return 0
 }
@@ -1084,7 +1090,7 @@ main() {
 
     # Get orchestrator decision
     local next_agent
-    next_agent=$(run_orchestrator "$orchestrator_context")
+    next_agent=$(run_orchestrator "$orchestrator_context" "$iteration")
 
     if [[ $? -ne 0 ]]; then
       print_error "Orchestrator decision failed"
@@ -1120,7 +1126,7 @@ main() {
     agent_context=$(build_agent_context "$next_agent")
     
     local agent_output
-    agent_output=$(activate_agent "$next_agent" "$agent_context")
+    agent_output=$(activate_agent "$next_agent" "$agent_context" "$iteration")
 
     if [[ $? -ne 0 ]]; then
       print_error "Agent activation failed: $next_agent"
