@@ -60,19 +60,26 @@ A complete multi-agent system designed to manage the full cycle of software deve
     uv sync
     ```
 
+3.  Initialize Beads in your project repository:
+    ```bash
+    # Navigate to your project directory (where you want to run the SDLC)
+    bd init
+    ```
+
 ### Usage
 
-To start the multi-agent SDLC orchestration:
+The orchestrator can be run from any directory by calling the script with its full path:
 
 ```bash
-./orchestrate_sdlc.sh
+/path/to/orchestrator/orchestrate_sdlc.sh [--max-iterations N]
 ```
 
-This will activate the Orchestrator, which will start the SDLC process by evaluating the current state and invoking the appropriate agents.
+This will activate the Orchestrator, which will start the SDLC process by evaluating the current state and invoking the appropriate agents in your current working directory.
 
 ## Workflow
 
-1.  **Initialization**: The Orchestrator verifies prerequisites and initializes Beads.
+1.  **Initialization**: The Orchestrator verifies prerequisites (Git, Beads, required CLI agents) and ensures a `specs.md` file exists.
+    -   **Note**: If Beads is not initialized, you will be prompted to run `bd init` manually.
 2.  **Orchestration Cycle**:
     -   Orchestrator decides which agent to activate.
     -   The chosen agent performs its task, updates Beads, and commits changes to Git.

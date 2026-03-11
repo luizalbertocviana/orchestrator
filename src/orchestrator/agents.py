@@ -25,7 +25,8 @@ class Agent(ABC):
         try:
             process = subprocess.run(
                 [cli_agent] + flags.split() + [full_prompt],
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
                 check=True
             )

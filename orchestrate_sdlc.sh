@@ -1,10 +1,10 @@
 #!/bin/bash
 # Wrapper script to run the Python-based SDLC Orchestrator via uv
 
-# Ensure we are in the project root
+# Ensure we know the project root
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-cd "$DIR"
 
 # Run the orchestrator via uv
 # We set PYTHONPATH to src to allow imports to work correctly
-PYTHONPATH=src uv run src/orchestrator/main.py run "$@"
+# We use --project $DIR to ensure uv finds the project context
+PYTHONPATH="$DIR/src" uv run --project "$DIR" "$DIR/src/orchestrator/main.py" run "$@"

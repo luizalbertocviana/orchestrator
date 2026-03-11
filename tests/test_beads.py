@@ -8,7 +8,7 @@ def test_run_command_success():
         mock_run.return_value = MagicMock(stdout="Success", returncode=0)
         result = wrapper._run_command(["list"])
         assert result == "Success"
-        mock_run.assert_called_with(["bd", "list"], capture_output=True, text=True, check=True)
+        mock_run.assert_called_with(["bd", "list"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
 
 def test_run_command_error():
     wrapper = BeadsWrapper()

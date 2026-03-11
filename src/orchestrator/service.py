@@ -60,7 +60,7 @@ class OrchestrationService:
         """Verifies that we are in a git repository."""
         try:
             subprocess.run(["git", "rev-parse", "--is-inside-work-tree"], 
-                           capture_output=True, check=True)
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
             return True
         except subprocess.CalledProcessError:
             print_error("Not a git repository.")
@@ -106,19 +106,24 @@ class OrchestrationService:
         return True
 
     def initialize_beads(self) -> bool:
-        """Initializes beads if not already initialized."""
+        """Verifies if beads is initialized."""
         try:
             # Check if bd list works
-            result = subprocess.run(["bd", "list"], capture_output=True, text=True)
-            if result.returncode != 0 or not result.stdout.strip():
-                print_info("Initializing beads...")
-                # We assume bd is installed and usable
-                subprocess.run(["bd", "init"], capture_output=True)
+            result = subprocess.run(["bd", "list"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            if result.returncode != 0:
+                print_error("Beads is not initialized.")
+                print_info("Please run 'bd init' manually to set up beads in this repository.")
+                return False
+            
+            # If initialized but empty, we can still create the initial task
+            if not result.stdout.strip():
+                print_info("Beads is empty. Creating initial task...")
                 beads.create_issue("Phase: Requirements Analysis - Review and refine specs.md")
                 print_success("Initial bead task created")
+            
             return True
         except Exception as e:
-            print_error(f"Failed to initialize beads: {e}")
+            print_error(f"Failed to verify beads initialization: {e}")
             return False
 
     def get_beads_state(self) -> str:
@@ -178,11 +183,11 @@ class OrchestrationService:
     def commit_changes(self, agent_name: str, message: str) -> bool:
         """Commits changes to git if any."""
         try:
-            subprocess.run(["git", "add", "-A"], capture_output=True)
+            subprocess.run(["git", "add", "-A"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             # Check for changes
             diff = subprocess.run(["git", "diff", "--cached", "--quiet"])
             if diff.returncode != 0:
-                subprocess.run(["git", "commit", "-m", f"[{agent_name}] {message}"], capture_output=True)
+                subprocess.run(["git", "commit", "-m", f"[{agent_name}] {message}"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 print_success(f"Changes committed: {message}")
                 return True
             else:
@@ -195,7 +200,7 @@ class OrchestrationService:
     def get_git_status(self) -> str:
         """Returns the current git status."""
         try:
-            result = subprocess.run(["git", "status", "--short"], capture_output=True, text=True)
+            result = subprocess.run(["git", "status", "--short"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             return result.stdout.strip()
         except Exception:
             return "Error getting git status"
@@ -203,7 +208,7 @@ class OrchestrationService:
     def get_git_log(self, n: int = 5) -> str:
         """Returns the recent git log entries."""
         try:
-            result = subprocess.run(["git", "log", "-n", str(n), "--oneline"], capture_output=True, text=True)
+            result = subprocess.run(["git", "log", "-n", str(n), "--oneline"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             return result.stdout.strip()
         except Exception:
             return "Error getting git log"
@@ -211,7 +216,7 @@ class OrchestrationService:
     def get_beads_prime(self) -> str:
         """Returns the output of bd prime."""
         try:
-            result = subprocess.run(["bd", "prime"], capture_output=True, text=True)
+            result = subprocess.run(["bd", "prime"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             return result.stdout.strip()
         except Exception:
             return "Error running bd prime"
@@ -274,10 +279,10 @@ class OrchestrationService:
                 # Use stderr=subprocess.STDOUT to match bash's 2>&1 behavior
                 process = subprocess.run(
                     [current_cli_agent] + flags.split() + [full_prompt],
-                    capture_output=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
                     text=True,
-                    timeout=timeout_seconds,
-                    stderr=subprocess.STDOUT
+                    timeout=timeout_seconds
                 )
                 if process.returncode == 0 and process.stdout.strip():
                     return process.stdout.strip()

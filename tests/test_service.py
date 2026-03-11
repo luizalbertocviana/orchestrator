@@ -39,17 +39,19 @@ def test_verify_specs_file(service):
 
 def test_initialize_beads(service):
     with patch('subprocess.run') as mock_run:
-        # Already initialized
+        # Already initialized with issues
         mock_run.return_value = MagicMock(returncode=0, stdout="some issues")
         assert service.initialize_beads() is True
         
-        # Not initialized
-        mock_run.side_effect = [
-            MagicMock(returncode=1, stdout=""), # bd list fails
-            MagicMock(returncode=0), # bd init
-            MagicMock(returncode=0)  # bd create
-        ]
-        assert service.initialize_beads() is True
+        # Initialized but empty -> should create initial task
+        mock_run.return_value = MagicMock(returncode=0, stdout="")
+        with patch('orchestrator.service.beads.create_issue') as mock_create:
+            assert service.initialize_beads() is True
+            mock_create.assert_called_once()
+        
+        # Not initialized -> should return False
+        mock_run.return_value = MagicMock(returncode=1, stdout="")
+        assert service.initialize_beads() is False
         
         # Exception
         mock_run.side_effect = Exception("error")

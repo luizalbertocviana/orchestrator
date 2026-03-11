@@ -20,7 +20,8 @@ class BeadsWrapper:
         try:
             result = subprocess.run(
                 [self.executable] + args,
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
                 check=True
             )
@@ -28,7 +29,7 @@ class BeadsWrapper:
         except subprocess.CalledProcessError as e:
             # Some commands might return non-zero exit codes but still be useful
             # or we might want to handle them differently
-            return e.stdout.strip()
+            return e.stdout.strip() or e.stderr.strip()
 
     def list_issues(self, status: Optional[str] = None) -> str:
         """Lists issues, optionally filtered by status."""

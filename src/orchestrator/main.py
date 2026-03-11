@@ -49,6 +49,11 @@ def parse_orchestrator_decision(output: str) -> str:
     return "UNKNOWN"
 
 @app.command()
+def version():
+    """Shows the version of the orchestrator."""
+    print("SDLC Orchestrator v0.1.0")
+
+@app.command()
 def run(
     max_iterations: int = typer.Option(config.max_iterations, help="Maximum number of iterations.")
 ):

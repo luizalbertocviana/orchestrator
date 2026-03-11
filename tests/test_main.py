@@ -16,6 +16,11 @@ def test_parse_orchestrator_decision():
     assert parse_orchestrator_decision("Let's activate the Requirements Analyst") == "Requirements Analyst"
     assert parse_orchestrator_decision("Nothing to see here") == "UNKNOWN"
 
+def test_version_command():
+    result = runner.invoke(app, ["version"])
+    assert result.exit_code == 0
+    assert "SDLC Orchestrator v0.1.0" in result.stdout
+
 @patch('orchestrator.main.orchestration_service')
 @patch('time.sleep', return_value=None)
 @patch('subprocess.run')
