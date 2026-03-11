@@ -27,11 +27,12 @@ readonly MAX_ITERATIONS=24  # Prevent infinite loops
 readonly AGENT_TIMEOUT_LIMIT=1200s
 
 # Agent rotation configuration
-readonly AGENTS=("opencode" "gemini" "qwen")
+readonly AGENTS=("opencode" "gemini" "qwen" "cline")
 declare -A AGENT_FLAGS=(
   ["opencode"]="run"
   ["gemini"]="-y -p"
   ["qwen"]="-y"
+  ["cline"]="-a -y"
 )
 declare -a AVAILABLE_AGENTS=()
 
