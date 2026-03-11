@@ -1,10 +1,6 @@
 from typing import Dict, List
 from pydantic import BaseModel, Field
 
-class AgentConfig(BaseModel):
-    name: str
-    flags: str
-
 class OrchestratorConfig(BaseModel):
     max_retries: int = 3
     max_iterations: int = 24
