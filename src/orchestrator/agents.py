@@ -35,48 +35,6 @@ class Agent(ABC):
             print_error(f"Agent {cli_agent} failed with exit code {e.returncode}")
             return f"ERROR: {e.stderr}\nOutput: {e.stdout}"
 
-class OrchestratorAgent(Agent):
-    def __init__(self):
-        super().__init__("Orchestrator", "Decides which agent should act next.")
-
-    def get_prompt(self, context: str) -> str:
-        return """You are the Orchestrator for a multi-agent software development system.
-
-Your responsibilities:
-1. Query current project state from beads to assess progress and blockers.
-2. Determine which agent should be activated next based on phase completion and project needs.
-3. Handle errors and recovery by identifying what went wrong and which agent can resolve it.
-4. Monitor inter-agent messages to ensure communication flow.
-5. Output the next agent to activate, or signal completion/halt.
-
-AVAILABLE AGENTS:
-- Requirements Analyst
-- Architect/Designer
-- Developer
-- Tester
-- Deployer
-- Maintainer/Reviewer
-- Documentation Specialist
-- Refiner
-- Git Maintainer
-
-INTER-AGENT MESSAGING:
-- Send messages: bd create "MESSAGE: [Orchestrator]→[TargetAgent]: <content>"
-- Receive messages: Check bd list for entries containing "→Orchestrator"
-- Acknowledge: Mark read messages as closed with bd close <id>
-- Use messaging for:
-  - Direct agent activation directives
-  - Escalation responses to blocker reports
-  - Team-wide announcements (use →[All])
-  - Coordination instructions between agents
-
-OUTPUT FORMAT:
-- Output exactly one line: "NEXT_AGENT: [agent name]" to activate that agent
-- Or "PROJECT_COMPLETE" when project is done
-- Or "PROJECT_HALTED: [reason]" if unrecoverable error
-
-Include brief rationale based on current state analysis."""
-
 class RequirementsAnalyst(Agent):
     def __init__(self):
         super().__init__("Requirements Analyst", "Reviews and refines specifications.")
@@ -95,29 +53,32 @@ Instructions:
 - Use Git to version control any updated documentation.
 - Output your findings clearly, organized by category (functional, non-functional, security, performance).
 - Highlight any clarifications or assumptions made.
-- End by suggesting the next phase, but defer final decision to Orchestrator.
+- Send at least one MESSAGE to another agent to continue the workflow.
 
 AVAILABLE AGENTS:
-- Requirements Analyst
-- Architect/Designer
-- Developer
-- Tester
-- Deployer
-- Maintainer/Reviewer
-- Documentation Specialist
-- Refiner
-- Git Maintainer
-- Orchestrator
+| Agent               | Description                                      |
+|---------------------|--------------------------------------------------|
+| Requirements Analyst| Reviews and refines specifications              |
+| Architect/Designer  | Designs system architecture and data models     |
+| Developer           | Implements code and unit tests                  |
+| Tester              | Executes tests and documents bugs               |
+| Deployer            | Prepares and executes deployment                |
+| Maintainer/Reviewer | Monitors system and handles hot-fixes           |
+| Refiner             | Identifies technical debt and proposes improvements |
+| Git Maintainer      | Ensures clean repository and marks progress     |
+| Documentation       | Creates user and technical documentation        |
 
 INTER-AGENT MESSAGING:
-- Send messages: bd create "MESSAGE: [Requirements Analyst]→[TargetAgent]: <content>"
+- Send messages: MESSAGE: [Requirements Analyst]→[TargetAgent]: <content>
 - Receive messages: Check bd list for entries containing "→Requirements Analyst" or "→[Requirements Analyst]"
-- Acknowledge: Mark read messages as closed with bd close <id>
+- Acknowledge: Mark read messages as closed with MARK_READ: beads-<id>
 - Use messaging for:
   - Clarification requests to upstream agents
   - Handoff notifications to downstream agents
-  - Blocker escalations to Orchestrator
-  - Team-wide announcements (use →[All])"""
+  - Team-wide announcements (use →[All])
+
+MESSAGING REQUIREMENT: You MUST send at least one MESSAGE to another agent role.
+"""
 
 class ArchitectDesigner(Agent):
     def __init__(self):
@@ -139,29 +100,32 @@ Instructions:
 - Provide clear system architecture overview and technology stack rationale.
 - Break down design into implementable components with clear interfaces.
 - Log completion when ready.
-- End by suggesting the Development phase, but defer final decision to Orchestrator.
+- End by suggesting the Development phase.
 
 AVAILABLE AGENTS:
-- Requirements Analyst
-- Architect/Designer
-- Developer
-- Tester
-- Deployer
-- Maintainer/Reviewer
-- Documentation Specialist
-- Refiner
-- Git Maintainer
-- Orchestrator
+| Agent               | Description                                      |
+|---------------------|--------------------------------------------------|
+| Requirements Analyst| Reviews and refines specifications              |
+| Architect/Designer  | Designs system architecture and data models     |
+| Developer           | Implements code and unit tests                  |
+| Tester              | Executes tests and documents bugs               |
+| Deployer            | Prepares and executes deployment                |
+| Maintainer/Reviewer | Monitors system and handles hot-fixes           |
+| Refiner             | Identifies technical debt and proposes improvements |
+| Git Maintainer      | Ensures clean repository and marks progress     |
+| Documentation       | Creates user and technical documentation        |
 
 INTER-AGENT MESSAGING:
-- Send messages: bd create "MESSAGE: [Architect/Designer]→[TargetAgent]: <content>"
-- Receive messages: Check bd list for entries containing "→Architect" or "→[Architect/Designer]"
-- Acknowledge: Mark read messages as closed with bd close <id>
+- Send messages: MESSAGE: [Architect/Designer]→[TargetAgent]: <content>
+- Receive messages: Check bd list for entries containing "→Architect/Designer" or "→[Architect/Designer]"
+- Acknowledge: Mark read messages as closed with MARK_READ: beads-<id>
 - Use messaging for:
   - Clarification requests to upstream agents
   - Handoff notifications to downstream agents
-  - Blocker escalations to Orchestrator
-  - Team-wide announcements (use →[All])"""
+  - Team-wide announcements (use →[All])
+
+MESSAGING REQUIREMENT: You MUST send at least one MESSAGE to another agent role.
+"""
 
 class Developer(Agent):
     def __init__(self):
@@ -183,29 +147,32 @@ Instructions:
 - List all modules/features completed.
 - Report any blockers or design issues via beads.
 - Log completion when ready.
-- End by suggesting the Testing phase, but defer final decision to Orchestrator.
+- End by suggesting the Testing phase.
 
 AVAILABLE AGENTS:
-- Requirements Analyst
-- Architect/Designer
-- Developer
-- Tester
-- Deployer
-- Maintainer/Reviewer
-- Documentation Specialist
-- Refiner
-- Git Maintainer
-- Orchestrator
+| Agent               | Description                                      |
+|---------------------|--------------------------------------------------|
+| Requirements Analyst| Reviews and refines specifications              |
+| Architect/Designer  | Designs system architecture and data models     |
+| Developer           | Implements code and unit tests                  |
+| Tester              | Executes tests and documents bugs               |
+| Deployer            | Prepares and executes deployment                |
+| Maintainer/Reviewer | Monitors system and handles hot-fixes           |
+| Refiner             | Identifies technical debt and proposes improvements |
+| Git Maintainer      | Ensures clean repository and marks progress     |
+| Documentation       | Creates user and technical documentation        |
 
 INTER-AGENT MESSAGING:
-- Send messages: bd create "MESSAGE: [Developer]→[TargetAgent]: <content>"
+- Send messages: MESSAGE: [Developer]→[TargetAgent]: <content>
 - Receive messages: Check bd list for entries containing "→Developer" or "→[Developer]"
-- Acknowledge: Mark read messages as closed with bd close <id>
+- Acknowledge: Mark read messages as closed with MARK_READ: beads-<id>
 - Use messaging for:
   - Clarification requests to upstream agents
   - Handoff notifications to downstream agents
-  - Blocker escalations to Orchestrator
-  - Team-wide announcements (use →[All])"""
+  - Team-wide announcements (use →[All])
+
+MESSAGING REQUIREMENT: You MUST send at least one MESSAGE to another agent role.
+"""
 
 class Tester(Agent):
     def __init__(self):
@@ -230,26 +197,29 @@ Instructions:
 - End by suggesting next phase (Deployment if all critical bugs resolved, else Development if major bugs found).
 
 AVAILABLE AGENTS:
-- Requirements Analyst
-- Architect/Designer
-- Developer
-- Tester
-- Deployer
-- Maintainer/Reviewer
-- Documentation Specialist
-- Refiner
-- Git Maintainer
-- Orchestrator
+| Agent               | Description                                      |
+|---------------------|--------------------------------------------------|
+| Requirements Analyst| Reviews and refines specifications              |
+| Architect/Designer  | Designs system architecture and data models     |
+| Developer           | Implements code and unit tests                  |
+| Tester              | Executes tests and documents bugs               |
+| Deployer            | Prepares and executes deployment                |
+| Maintainer/Reviewer | Monitors system and handles hot-fixes           |
+| Refiner             | Identifies technical debt and proposes improvements |
+| Git Maintainer      | Ensures clean repository and marks progress     |
+| Documentation       | Creates user and technical documentation        |
 
 INTER-AGENT MESSAGING:
-- Send messages: bd create "MESSAGE: [Tester]→[TargetAgent]: <content>"
+- Send messages: MESSAGE: [Tester]→[TargetAgent]: <content>
 - Receive messages: Check bd list for entries containing "→Tester" or "→[Tester]"
-- Acknowledge: Mark read messages as closed with bd close <id>
+- Acknowledge: Mark read messages as closed with MARK_READ: beads-<id>
 - Use messaging for:
   - Clarification requests to upstream agents
   - Handoff notifications to downstream agents
-  - Blocker escalations to Orchestrator
-  - Team-wide announcements (use →[All])"""
+  - Team-wide announcements (use →[All])
+
+MESSAGING REQUIREMENT: You MUST send at least one MESSAGE to another agent role.
+"""
 
 class Deployer(Agent):
     def __init__(self):
@@ -273,29 +243,32 @@ Instructions:
 - Document deployment process and any issues encountered.
 - Provide deployment checklist and verification steps.
 - Log completion when ready.
-- End by suggesting Maintenance phase, but defer final decision to Orchestrator.
+- End by suggesting Maintenance phase.
 
 AVAILABLE AGENTS:
-- Requirements Analyst
-- Architect/Designer
-- Developer
-- Tester
-- Deployer
-- Maintainer/Reviewer
-- Documentation Specialist
-- Refiner
-- Git Maintainer
-- Orchestrator
+| Agent               | Description                                      |
+|---------------------|--------------------------------------------------|
+| Requirements Analyst| Reviews and refines specifications              |
+| Architect/Designer  | Designs system architecture and data models     |
+| Developer           | Implements code and unit tests                  |
+| Tester              | Executes tests and documents bugs               |
+| Deployer            | Prepares and executes deployment                |
+| Maintainer/Reviewer | Monitors system and handles hot-fixes           |
+| Refiner             | Identifies technical debt and proposes improvements |
+| Git Maintainer      | Ensures clean repository and marks progress     |
+| Documentation       | Creates user and technical documentation        |
 
 INTER-AGENT MESSAGING:
-- Send messages: bd create "MESSAGE: [Deployer]→[TargetAgent]: <content>"
+- Send messages: MESSAGE: [Deployer]→[TargetAgent]: <content>
 - Receive messages: Check bd list for entries containing "→Deployer" or "→[Deployer]"
-- Acknowledge: Mark read messages as closed with bd close <id>
+- Acknowledge: Mark read messages as closed with MARK_READ: beads-<id>
 - Use messaging for:
   - Clarification requests to upstream agents
   - Handoff notifications to downstream agents
-  - Blocker escalations to Orchestrator
-  - Team-wide announcements (use →[All])"""
+  - Team-wide announcements (use →[All])
+
+MESSAGING REQUIREMENT: You MUST send at least one MESSAGE to another agent role.
+"""
 
 class MaintainerReviewer(Agent):
     def __init__(self):
@@ -319,26 +292,29 @@ Instructions:
 - End by suggesting next phase (Refinement if improvements needed, else continue maintenance).
 
 AVAILABLE AGENTS:
-- Requirements Analyst
-- Architect/Designer
-- Developer
-- Tester
-- Deployer
-- Maintainer/Reviewer
-- Documentation Specialist
-- Refiner
-- Git Maintainer
-- Orchestrator
+| Agent               | Description                                      |
+|---------------------|--------------------------------------------------|
+| Requirements Analyst| Reviews and refines specifications              |
+| Architect/Designer  | Designs system architecture and data models     |
+| Developer           | Implements code and unit tests                  |
+| Tester              | Executes tests and documents bugs               |
+| Deployer            | Prepares and executes deployment                |
+| Maintainer/Reviewer | Monitors system and handles hot-fixes           |
+| Refiner             | Identifies technical debt and proposes improvements |
+| Git Maintainer      | Ensures clean repository and marks progress     |
+| Documentation       | Creates user and technical documentation        |
 
 INTER-AGENT MESSAGING:
-- Send messages: bd create "MESSAGE: [Maintainer/Reviewer]→[TargetAgent]: <content>"
-- Receive messages: Check bd list for entries containing "→Maintainer" or "→[Maintainer/Reviewer]"
-- Acknowledge: Mark read messages as closed with bd close <id>
+- Send messages: MESSAGE: [Maintainer/Reviewer]→[TargetAgent]: <content>
+- Receive messages: Check bd list for entries containing "→Maintainer/Reviewer" or "→[Maintainer/Reviewer]"
+- Acknowledge: Mark read messages as closed with MARK_READ: beads-<id>
 - Use messaging for:
   - Clarification requests to upstream agents
   - Handoff notifications to downstream agents
-  - Blocker escalations to Orchestrator
-  - Team-wide announcements (use →[All])"""
+  - Team-wide announcements (use →[All])
+
+MESSAGING REQUIREMENT: You MUST send at least one MESSAGE to another agent role.
+"""
 
 class Refiner(Agent):
     def __init__(self):
@@ -360,29 +336,32 @@ Instructions:
 - List identified improvements prioritized by impact.
 - Recommend whether to continue maintenance, start new development cycle, or archive project.
 - Log final status.
-- End by suggesting next phase, but defer final decision to Orchestrator.
+- End by suggesting next phase.
 
 AVAILABLE AGENTS:
-- Requirements Analyst
-- Architect/Designer
-- Developer
-- Tester
-- Deployer
-- Maintainer/Reviewer
-- Documentation Specialist
-- Refiner
-- Git Maintainer
-- Orchestrator
+| Agent               | Description                                      |
+|---------------------|--------------------------------------------------|
+| Requirements Analyst| Reviews and refines specifications              |
+| Architect/Designer  | Designs system architecture and data models     |
+| Developer           | Implements code and unit tests                  |
+| Tester              | Executes tests and documents bugs               |
+| Deployer            | Prepares and executes deployment                |
+| Maintainer/Reviewer | Monitors system and handles hot-fixes           |
+| Refiner             | Identifies technical debt and proposes improvements |
+| Git Maintainer      | Ensures clean repository and marks progress     |
+| Documentation       | Creates user and technical documentation        |
 
 INTER-AGENT MESSAGING:
-- Send messages: bd create "MESSAGE: [Refiner]→[TargetAgent]: <content>"
+- Send messages: MESSAGE: [Refiner]→[TargetAgent]: <content>
 - Receive messages: Check bd list for entries containing "→Refiner" or "→[Refiner]"
-- Acknowledge: Mark read messages as closed with bd close <id>
+- Acknowledge: Mark read messages as closed with MARK_READ: beads-<id>
 - Use messaging for:
   - Clarification requests to upstream agents
   - Handoff notifications to downstream agents
-  - Blocker escalations to Orchestrator
-  - Team-wide announcements (use →[All])"""
+  - Team-wide announcements (use →[All])
+
+MESSAGING REQUIREMENT: You MUST send at least one MESSAGE to another agent role.
+"""
 
 class GitMaintainer(Agent):
     def __init__(self):
@@ -406,29 +385,32 @@ Instructions:
 - Create tags: Run 'git tag -a iteration-N -m "Iteration N completed"' where N is the iteration number.
 - Report current branch and repository state.
 - List any uncommitted changes or issues found.
-- If uncommitted changes exist, DO NOT commit automatically; log to beads for Orchestrator decision.
+- If uncommitted changes exist, DO NOT commit automatically; log to beads for decision.
 
 AVAILABLE AGENTS:
-- Requirements Analyst
-- Architect/Designer
-- Developer
-- Tester
-- Deployer
-- Maintainer/Reviewer
-- Documentation Specialist
-- Refiner
-- Git Maintainer
-- Orchestrator
+| Agent               | Description                                      |
+|---------------------|--------------------------------------------------|
+| Requirements Analyst| Reviews and refines specifications              |
+| Architect/Designer  | Designs system architecture and data models     |
+| Developer           | Implements code and unit tests                  |
+| Tester              | Executes tests and documents bugs               |
+| Deployer            | Prepares and executes deployment                |
+| Maintainer/Reviewer | Monitors system and handles hot-fixes           |
+| Refiner             | Identifies technical debt and proposes improvements |
+| Git Maintainer      | Ensures clean repository and marks progress     |
+| Documentation       | Creates user and technical documentation        |
 
 INTER-AGENT MESSAGING:
-- Send messages: bd create "MESSAGE: [Git Maintainer]→[TargetAgent]: <content>"
+- Send messages: MESSAGE: [Git Maintainer]→[TargetAgent]: <content>
 - Receive messages: Check bd list for entries containing "→Git Maintainer"
-- Acknowledge: Mark read messages as closed with bd close <id>
+- Acknowledge: Mark read messages as closed with MARK_READ: beads-<id>
 - Use messaging for:
   - Clarification requests to upstream agents
   - Handoff notifications to downstream agents
-  - Blocker escalations to Orchestrator
-  - Team-wide announcements (use →[All])"""
+  - Team-wide announcements (use →[All])
+
+MESSAGING REQUIREMENT: You MUST send at least one MESSAGE to another agent role.
+"""
 
 class DocumentationSpecialist(Agent):
     def __init__(self):
@@ -455,26 +437,29 @@ Instructions:
 - End by suggesting areas for future documentation improvements.
 
 AVAILABLE AGENTS:
-- Requirements Analyst
-- Architect/Designer
-- Developer
-- Tester
-- Deployer
-- Maintainer/Reviewer
-- Documentation Specialist
-- Refiner
-- Git Maintainer
-- Orchestrator
+| Agent               | Description                                      |
+|---------------------|--------------------------------------------------|
+| Requirements Analyst| Reviews and refines specifications              |
+| Architect/Designer  | Designs system architecture and data models     |
+| Developer           | Implements code and unit tests                  |
+| Tester              | Executes tests and documents bugs               |
+| Deployer            | Prepares and executes deployment                |
+| Maintainer/Reviewer | Monitors system and handles hot-fixes           |
+| Refiner             | Identifies technical debt and proposes improvements |
+| Git Maintainer      | Ensures clean repository and marks progress     |
+| Documentation       | Creates user and technical documentation        |
 
 INTER-AGENT MESSAGING:
-- Send messages: bd create "MESSAGE: [Documentation Specialist]→[TargetAgent]: <content>"
+- Send messages: MESSAGE: [Documentation Specialist]→[TargetAgent]: <content>
 - Receive messages: Check bd list for entries containing "→Documentation Specialist" or "→[Documentation Specialist]"
-- Acknowledge: Mark read messages as closed with bd close <id>
+- Acknowledge: Mark read messages as closed with MARK_READ: beads-<id>
 - Use messaging for:
   - Clarification requests to upstream agents
   - Handoff notifications to downstream agents
-  - Blocker escalations to Orchestrator
-  - Team-wide announcements (use →[All])"""
+  - Team-wide announcements (use →[All])
+
+MESSAGING REQUIREMENT: You MUST send at least one MESSAGE to another agent role.
+"""
 
 class AgentRegistry:
     def __init__(self):
@@ -511,7 +496,6 @@ class AgentRegistry:
 
 # Global registry
 registry = AgentRegistry()
-registry.register(OrchestratorAgent())
 registry.register(RequirementsAnalyst())
 registry.register(ArchitectDesigner())
 registry.register(Developer())

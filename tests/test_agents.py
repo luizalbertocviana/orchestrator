@@ -1,7 +1,7 @@
 from unittest.mock import patch, MagicMock
 import subprocess
 import pytest
-from orchestrator.agents import registry, Agent, OrchestratorAgent, RequirementsAnalyst
+from orchestrator.agents import registry, Agent, RequirementsAnalyst
 
 def test_agent_registry():
     assert registry.get_agent("analyst") is not None

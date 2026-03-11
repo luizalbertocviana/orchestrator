@@ -23,6 +23,8 @@ def test_agent_rotation():
         assert agent1 == agent2
 
 def test_registry():
-    assert registry.get_agent("Orchestrator") is not None
+    # Orchestrator no longer exists - message-driven system
+    assert registry.get_agent("Orchestrator") is None
     assert registry.get_agent("Requirements Analyst") is not None
+    assert registry.get_agent("Developer") is not None
     assert registry.get_agent("Unknown") is None

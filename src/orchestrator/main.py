@@ -1,10 +1,10 @@
 import typer
 import time
 import re
-from typing import Optional
+from typing import Optional, List, Tuple
 from orchestrator.config import config
 from orchestrator.service import orchestration_service
-from orchestrator.utils import print_info, print_error, print_success, print_header
+from orchestrator.utils import print_info, print_error, print_success, print_header, log_agent_activation, log_messages_received, log_message_sent, log_messages_acknowledged
 from orchestrator.agents import registry
 
 app = typer.Typer()
@@ -25,28 +25,34 @@ def strip_markdown(text: str) -> str:
     text = re.sub(r'\s+', ' ', text).strip()
     return text
 
-def parse_orchestrator_decision(output: str) -> str:
-    """Parses the orchestrator's output to determine the next action."""
-    normalized = strip_markdown(output)
-    
-    if re.search(r'PROJECT_COMPLETE', normalized, re.IGNORECASE):
-        return "PROJECT_COMPLETE"
-    
-    halt_match = re.search(r'PROJECT_HALTED[:\s]*(.*)', normalized, re.IGNORECASE)
-    if halt_match:
-        reason = halt_match.group(1).strip()
-        return f"PROJECT_HALTED: {reason}" if reason else "PROJECT_HALTED"
+def parse_messages(output: str) -> List[Tuple[str, str, str]]:
+    """
+    Extracts MESSAGE: patterns from agent output.
+    Returns list of (from_agent, to_agent, content) tuples.
+    Format: MESSAGE: [AgentName]→[TargetAgent]: <content>
+    """
+    messages = []
+    # Match MESSAGE: [Agent]→[Target]: content (one per line)
+    pattern = r'MESSAGE:\s*\[([^\]]+)\]\s*→\s*\[([^\]]+)\]\s*:\s*(.+?)$'
+    for match in re.finditer(pattern, output, re.IGNORECASE | re.MULTILINE):
+        from_agent, to_agent, content = match.groups()
+        messages.append((from_agent.strip(), to_agent.strip(), content.strip()))
+    return messages
 
-    agent_match = re.search(r'NEXT_AGENT\s*:\s*([A-Za-z/ ]+)', normalized, re.IGNORECASE)
-    if agent_match:
-        next_agent = agent_match.group(1).strip()
-        return next_agent
-
-    for agent_name in registry.list_agents():
-        if agent_name.lower() in normalized.lower():
-            return agent_name
-
-    return "UNKNOWN"
+def parse_mark_read(output: str) -> List[str]:
+    """
+    Extracts MARK_READ: patterns from agent output.
+    Returns list of bead IDs (e.g., ['beads-123', 'beads-124']).
+    Format: MARK_READ: beads-XXX or MARK_READ: beads-XXX, beads-YYY
+    """
+    bead_ids = []
+    pattern = r'MARK_READ:\s*([^\n]+)'
+    matches = re.findall(pattern, output, re.IGNORECASE)
+    for match in matches:
+        # Split by comma and extract bead IDs
+        ids = re.findall(r'beads-[\w]+', match)
+        bead_ids.extend(ids)
+    return bead_ids
 
 @app.command()
 def version():
@@ -57,8 +63,8 @@ def version():
 def run(
     max_iterations: int = typer.Option(config.max_iterations, help="Maximum number of iterations.")
 ):
-    """Starts the multi-agent SDLC orchestration."""
-    print_header("MULTI-AGENT SDLC ORCHESTRATION SYSTEM (PYTHON)")
+    """Starts the message-driven multi-agent SDLC system."""
+    print_header("MESSAGE-DRIVEN MULTI-AGENT SDLC SYSTEM")
 
     # Prerequisites
     print_info("Verifying prerequisites...")
@@ -69,76 +75,78 @@ def run(
     orchestration_service.verify_specs_file()
     if not orchestration_service.initialize_beads():
         return
-    
+
+    # Bootstrap: create initial message to each agent
+    print_info("Creating bootstrap messages...")
+    orchestration_service.create_bootstrap_messages()
+    print_success("Bootstrap messages created")
+
     print_success("All prerequisites verified")
 
     iteration = 0
-    project_status = "RUNNING"
 
-    while project_status == "RUNNING" and iteration < max_iterations:
+    while iteration < max_iterations:
         iteration += 1
         print_header(f"ITERATION {iteration}")
 
-        # 1. Run Orchestrator to get decision
-        print_info("Getting Orchestrator decision...")
-        orchestrator_output = orchestration_service.activate_agent("Orchestrator", iteration)
+        # 1. Check for pending messages
+        pending_count = orchestration_service.count_pending_messages()
+        if pending_count == 0:
+            print_header("NO PENDING MESSAGES - SYSTEM COMPLETE")
+            print_success("All messages processed. System completed naturally.")
+            break
+
+        # 2. Select agent with most pending messages (tie-break by role order)
+        selected_agent = orchestration_service.select_agent_by_messages()
+        if not selected_agent:
+            print_error("No agent could be selected.")
+            break
+
+        # Log agent activation
+        log_agent_activation(selected_agent, pending_count)
+
+        # 3. Activate the agent
+        print_header(f"ACTIVATING AGENT: {selected_agent}")
         
-        if not orchestrator_output:
-            print_error("Orchestrator failed to provide a decision.")
-            project_status = "HALTED"
-            break
-
-        next_action = parse_orchestrator_decision(orchestrator_output)
-        print_info(f"Orchestrator decision: {next_action}")
-
-        # 2. Handle completion or halt
-        if next_action == "PROJECT_COMPLETE":
-            print_header("PROJECT COMPLETION")
-            print_success("All phases completed successfully!")
-            
-            # Final status report
-            final_beads = orchestration_service.get_beads_state()
-            print_info(f"Final project state:\n{final_beads}")
-            
-            project_status = "COMPLETE"
-            break
-        elif next_action.startswith("PROJECT_HALTED"):
-            print_error(f"Project halted: {next_action}")
-            project_status = "HALTED"
-            break
-        elif next_action == "UNKNOWN":
-            print_error("Could not determine next agent from Orchestrator output.")
-            project_status = "HALTED"
-            break
-
-        # 3. Activate the determined agent
-        print_header(f"ACTIVATING AGENT: {next_action}")
-        agent_output = orchestration_service.activate_agent(next_action, iteration)
+        # Log messages received
+        received_count = orchestration_service.count_messages_for_agent(selected_agent)
+        log_messages_received(selected_agent, received_count)
         
+        agent_output = orchestration_service.activate_agent(selected_agent, iteration)
+
         if not agent_output:
-            print_error(f"Agent {next_action} failed.")
+            print_error(f"Agent {selected_agent} failed.")
             continue
 
-        print_info(f"Agent {next_action} completed.")
-        
-        # 4. Commit changes and Tag
-        commit_msg = f"Iteration {iteration} - {next_action} task completed"
-        orchestration_service.commit_changes(next_action, commit_msg)
-        
-        # Tagging (matching bash script iteration-N)
+        # 4. Parse and register new messages
+        new_messages = parse_messages(agent_output)
+        for from_agent, to_agent, content in new_messages:
+            orchestration_service.register_message(from_agent, to_agent, content)
+            log_message_sent(from_agent, to_agent, content)
+
+        # 5. Mark messages as read
+        mark_read_ids = parse_mark_read(agent_output)
+        for bead_id in mark_read_ids:
+            orchestration_service.mark_message_read(bead_id)
+        log_messages_acknowledged(selected_agent, mark_read_ids)
+
+        # 6. Commit changes and Tag
+        commit_msg = f"Iteration {iteration} - {selected_agent} task completed"
+        orchestration_service.commit_changes(selected_agent, commit_msg)
+
+        # Tagging
         import subprocess
         subprocess.run(["git", "tag", "-a", f"iteration-{iteration}", "-m", f"Iteration {iteration} completed"], capture_output=True)
-        
+
         # Brief pause
         time.sleep(1)
 
     print_header("ORCHESTRATION FINAL STATUS")
-    if project_status == "COMPLETE":
-        print_success(f"Project completed successfully after {iteration} iterations.")
-    elif project_status == "HALTED":
-        print_error(f"Project halted after {iteration} iterations.")
-    else:
-        print_error(f"Project reached maximum iterations ({max_iterations}) without completion.")
+    print_success(f"System completed after {iteration} iterations.")
+    
+    # Final status report
+    final_beads = orchestration_service.get_beads_state()
+    print_info(f"Final project state:\n{final_beads}")
 
 if __name__ == "__main__":
     app()

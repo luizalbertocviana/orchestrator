@@ -3,11 +3,25 @@ import subprocess
 import os
 import time
 import datetime
-from typing import List, Optional
+import re
+from typing import List, Optional, Dict, Tuple
 from orchestrator.config import config
 from orchestrator.agents import registry, Agent
 from orchestrator.beads import beads
 from orchestrator.utils import print_info, print_error, print_success, print_header, print_warning
+
+# Agent role ordering for tie-breaking (SDLC order)
+AGENT_ROLE_ORDER = [
+    "Requirements Analyst",
+    "Architect/Designer",
+    "Developer",
+    "Tester",
+    "Deployer",
+    "Maintainer/Reviewer",
+    "Refiner",
+    "Git Maintainer",
+    "Documentation Specialist"
+]
 
 class OrchestrationService:
     def __init__(self):
@@ -149,16 +163,42 @@ class OrchestrationService:
             return False
 
     def get_messages_for_agent(self, agent_name: str) -> str:
-        """Retrieves messages addressed to this agent."""
-        all_beads = self.get_beads_state()
-        messages = []
-        for line in all_beads.splitlines():
-            if "MESSAGE:" in line and f"→{agent_name}" in line:
-                messages.append(line)
-            elif "MESSAGE:" in line and "→[All]" in line:
-                messages.append(line)
-        
-        return "\n".join(messages) if messages else "No new messages"
+        """
+        Retrieves messages addressed to this agent with bead IDs.
+        Format: [beads-XXX] MESSAGE: [FromAgent]→[TargetAgent]: content
+        """
+        try:
+            result = subprocess.run(
+                ["bd", "list", "--status=open", "--json"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            
+            messages = []
+            
+            # Parse JSONL output (one JSON object per line)
+            for line in result.stdout.strip().splitlines():
+                if not line.strip():
+                    continue
+                try:
+                    import json
+                    bead = json.loads(line)
+                    title = bead.get("title", "")
+                    bead_id = bead.get("id", "")
+                    
+                    if "MESSAGE:" in title:
+                        # Check if message is for this agent or [All]
+                        if f"→{agent_name}" in title or "→[All]" in title:
+                            # Format with bead ID for agent reference
+                            messages.append(f"[{bead_id}] {title}")
+                except json.JSONDecodeError:
+                    continue
+            
+            return "\n".join(messages) if messages else "No new messages"
+        except Exception as e:
+            print_error(f"Failed to get messages for {agent_name}: {e}")
+            return "No new messages"
 
     def get_messages_from_agent(self, agent_name: str) -> str:
         """Retrieves messages sent by this agent."""
@@ -179,6 +219,140 @@ class OrchestrationService:
         except Exception as e:
             print_warning(f"Failed to mark message as read: {e}")
             return False
+
+    def create_bootstrap_messages(self) -> None:
+        """Creates initial bootstrap messages to all agents at system startup."""
+        bootstrap_content = "Bootstrap message to start the message-driven SDLC system. Begin your role and send messages to other agents as needed."
+        for agent_name in AGENT_ROLE_ORDER:
+            try:
+                beads.send_message("System", agent_name, bootstrap_content)
+                print_info(f"Bootstrap message sent to: {agent_name}")
+            except Exception as e:
+                print_warning(f"Failed to create bootstrap message for {agent_name}: {e}")
+
+    def count_pending_messages(self) -> int:
+        """Counts the number of pending (open) MESSAGE: beads."""
+        try:
+            result = subprocess.run(
+                ["bd", "list", "--status=open"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            count = 0
+            for line in result.stdout.splitlines():
+                if "MESSAGE:" in line:
+                    count += 1
+            return count
+        except Exception as e:
+            print_error(f"Failed to count pending messages: {e}")
+            return 0
+
+    def count_messages_for_agent(self, agent_name: str) -> int:
+        """Counts pending messages for a specific agent."""
+        try:
+            result = subprocess.run(
+                ["bd", "list", "--status=open", "--json"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            count = 0
+            
+            for line in result.stdout.strip().splitlines():
+                if not line.strip():
+                    continue
+                try:
+                    import json
+                    bead = json.loads(line)
+                    title = bead.get("title", "")
+                    
+                    if "MESSAGE:" in title:
+                        if f"→{agent_name}" in title or "→[All]" in title:
+                            count += 1
+                except json.JSONDecodeError:
+                    continue
+            
+            return count
+        except Exception as e:
+            print_error(f"Failed to count messages for {agent_name}: {e}")
+            return 0
+
+    def get_pending_messages_by_agent(self) -> Dict[str, List[Dict]]:
+        """
+        Gets all pending messages grouped by target agent.
+        Returns dict: {agent_name: [{'id': 'beads-xxx', 'title': '...'}, ...]}
+        """
+        try:
+            result = subprocess.run(
+                ["bd", "list", "--status=open", "--json"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            
+            messages_by_agent: Dict[str, List[Dict]] = {}
+            
+            # Parse JSONL output (one JSON object per line)
+            for line in result.stdout.strip().splitlines():
+                if not line.strip():
+                    continue
+                try:
+                    import json
+                    bead = json.loads(line)
+                    title = bead.get("title", "")
+                    bead_id = bead.get("id", "")
+                    
+                    if "MESSAGE:" in title:
+                        # Extract target agent from title
+                        # Format: "MESSAGE: [timestamp] FromAgent→ToAgent: content"
+                        match = re.search(r'→\[?([^\]:]+)\]?:', title)
+                        if match:
+                            target_agent = match.group(1).strip()
+                            if target_agent not in messages_by_agent:
+                                messages_by_agent[target_agent] = []
+                            messages_by_agent[target_agent].append({'id': bead_id, 'title': title})
+                except json.JSONDecodeError:
+                    continue
+            
+            return messages_by_agent
+        except Exception as e:
+            print_error(f"Failed to get pending messages: {e}")
+            return {}
+
+    def select_agent_by_messages(self) -> Optional[str]:
+        """
+        Selects the agent with the most pending messages.
+        Uses AGENT_ROLE_ORDER for tie-breaking.
+        """
+        messages_by_agent = self.get_pending_messages_by_agent()
+        
+        if not messages_by_agent:
+            return None
+        
+        # Find agent with most messages
+        max_count = 0
+        selected_agent = None
+        
+        for agent_name in AGENT_ROLE_ORDER:
+            if agent_name in messages_by_agent:
+                count = len(messages_by_agent[agent_name])
+                if count > max_count:
+                    max_count = count
+                    selected_agent = agent_name
+        
+        # If no agent from the order has messages, pick the first one with messages
+        if not selected_agent:
+            for agent_name, messages in messages_by_agent.items():
+                if messages:
+                    selected_agent = agent_name
+                    break
+        
+        return selected_agent
+
+    def register_message(self, from_agent: str, to_agent: str, content: str) -> bool:
+        """Registers a new message in beads."""
+        return self.send_message(from_agent, to_agent, content)
 
     def commit_changes(self, agent_name: str, message: str) -> bool:
         """Commits changes to git if any."""

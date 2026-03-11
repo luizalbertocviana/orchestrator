@@ -67,14 +67,20 @@ def test_check_for_blockers(service):
 def test_messaging(service):
     with patch('orchestrator.service.beads.send_message') as mock_send:
         assert service.send_message("A", "B", "msg") is True
-    
+
     with patch('orchestrator.service.beads.send_message', side_effect=Exception("error")):
         assert service.send_message("A", "B", "msg") is False
 
-    with patch('orchestrator.service.beads.list_issues', return_value="MESSAGE: A→B: hello\nMESSAGE: B→[All]: hi"):
-        assert "hello" in service.get_messages_for_agent("B")
-        assert "hi" in service.get_messages_for_agent("B")
-        assert "hello" in service.get_messages_from_agent("A")
+    # Mock subprocess.run for get_messages_for_agent (uses bd list --json)
+    mock_result = MagicMock()
+    mock_result.stdout = '{"id": "beads-123", "title": "MESSAGE: A→B: hello"}\n{"id": "beads-124", "title": "MESSAGE: B→[All]: hi"}\n'
+    mock_result.stderr = ""
+    
+    with patch('subprocess.run', return_value=mock_result):
+        messages = service.get_messages_for_agent("B")
+        assert "hello" in messages
+        assert "hi" in messages
+        assert "beads-123" in messages
 
 def test_mark_message_read(service):
     with patch('orchestrator.service.beads.close_issue') as mock_close:
@@ -141,3 +147,63 @@ def test_call_agent_with_retry_exception(service):
 
 def test_activate_agent_unknown(service):
     assert service.activate_agent("Unknown Agent", 1) is None
+
+def test_get_next_cli_agent(service):
+    """Test CLI agent rotation."""
+    service.available_cli_agents = ['gemini', 'qwen']
+    
+    assert service.get_next_cli_agent(1) == 'gemini'
+    assert service.get_next_cli_agent(2) == 'qwen'
+    assert service.get_next_cli_agent(3) == 'gemini'  # Wraps around
+
+def test_get_next_cli_agent_empty(service):
+    """Test CLI agent selection with no agents."""
+    service.available_cli_agents = []
+    assert service.get_next_cli_agent(1) is None
+
+def test_create_specs_template(service):
+    """Test specs template creation."""
+    with patch('builtins.open', __enter__=lambda *args: None, __exit__=lambda *args: None):
+        service.create_specs_template()
+
+def test_get_beads_state(service):
+    """Test getting beads state."""
+    with patch('orchestrator.service.beads.get_state', return_value="state"):
+        assert service.get_beads_state() == "state"
+
+def test_get_messages_from_agent(service):
+    """Test getting messages sent by an agent."""
+    with patch('orchestrator.service.OrchestrationService.get_beads_state', 
+               return_value="beads-123 | MESSAGE: A→B: hello\nbeads-124 | MESSAGE: A→C: world"):
+        messages = service.get_messages_from_agent("A")
+        assert "hello" in messages
+        assert "world" in messages
+
+def test_get_messages_from_agent_empty(service):
+    """Test getting messages when none sent."""
+    with patch('orchestrator.service.OrchestrationService.get_beads_state', return_value=""):
+        assert service.get_messages_from_agent("A") == "No sent messages"
+
+def test_call_agent_with_retry_success(service):
+    """Test successful agent call."""
+    service.available_cli_agents = ['gemini']
+    
+    mock_process = MagicMock()
+    mock_process.returncode = 0
+    mock_process.stdout = "Agent output"
+    
+    with patch('subprocess.run', return_value=mock_process):
+        result = service.call_agent_with_retry("Developer", "prompt", "context", 1)
+        assert result == "Agent output"
+
+def test_activate_agent_success(service):
+    """Test successful agent activation."""
+    with patch.object(service, 'build_context', return_value="context"):
+        with patch.object(service, 'call_agent_with_retry', return_value="output"):
+            result = service.activate_agent("Developer", 1)
+            assert result == "output"
+
+def test_get_available_cli_agents_none():
+    with patch('shutil.which', return_value=None):
+        service = OrchestrationService()
+        assert service.available_cli_agents == []
