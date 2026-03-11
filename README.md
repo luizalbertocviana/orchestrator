@@ -88,4 +88,12 @@ This project uses `beads` for all task tracking. Use the following commands to i
 - `bd show <id>`: Get details for a specific task.
 - `bd prime`: Register project usage aspects (essential for agent context).
 
+## Collaboration and Persistence
+
+This system is designed for multi-agent collaboration and long-term memory:
+
+- **Syncing**: Use `bd dolt pull` and `bd dolt push` to synchronize task state with a Dolt remote.
+- **Memories**: Use `bd remember "insight"` to store persistent knowledge that agents can access in future sessions.
+- **Search**: Use `bd memories <keyword>` to find stored insights.
+
 ---
