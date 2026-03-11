@@ -832,7 +832,6 @@ AVAILABLE AGENTS:
 - Documentation Specialist
 - Refiner
 - Git Maintainer
-- Orchestrator
 
 INTER-AGENT MESSAGING:
 - Send messages: bd create "MESSAGE: [Orchestrator]→[TargetAgent]: <content>"
