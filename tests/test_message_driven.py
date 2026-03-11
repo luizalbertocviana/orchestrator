@@ -72,20 +72,20 @@ class TestGetPendingMessagesByAgent:
         """Test grouping pending messages by target agent."""
         mock_result = MagicMock()
         mock_result.stdout = (
-            '{"id": "beads-123", "title": "MESSAGE: A→Developer: hello"}\n'
-            '{"id": "beads-124", "title": "MESSAGE: B→Developer: world"}\n'
-            '{"id": "beads-125", "title": "MESSAGE: C→Tester: test this"}\n'
+            "○ orchestrator-123 ● P3 MESSAGE: A→Developer: hello\n"
+            "○ orchestrator-124 ● P3 MESSAGE: B→Developer: world\n"
+            "○ orchestrator-125 ● P3 MESSAGE: C→Tester: test this\n"
         )
         mock_result.stderr = ""
-        
+
         with patch('subprocess.run', return_value=mock_result):
             result = service.get_pending_messages_by_agent()
-            
+
             assert "Developer" in result
             assert "Tester" in result
             assert len(result["Developer"]) == 2
             assert len(result["Tester"]) == 1
-            assert result["Developer"][0]["id"] == "beads-123"
+            assert result["Developer"][0]["id"] == "orchestrator-123"
 
     def test_get_pending_messages_by_agent_empty(self, service):
         """Test with no pending messages."""
@@ -192,12 +192,12 @@ class TestCountMessagesForAgent:
         """Test counting messages for a specific agent."""
         mock_result = MagicMock()
         mock_result.stdout = (
-            '{"id": "beads-123", "title": "MESSAGE: A→Developer: hello"}\n'
-            '{"id": "beads-124", "title": "MESSAGE: B→Developer: world"}\n'
-            '{"id": "beads-125", "title": "MESSAGE: C→Tester: test"}\n'
+            "○ orchestrator-123 ● P3 MESSAGE: A→Developer: hello\n"
+            "○ orchestrator-124 ● P3 MESSAGE: B→Developer: world\n"
+            "○ orchestrator-125 ● P3 MESSAGE: C→Tester: test\n"
         )
         mock_result.stderr = ""
-        
+
         with patch('subprocess.run', return_value=mock_result):
             count = service.count_messages_for_agent("Developer")
             assert count == 2
@@ -206,10 +206,10 @@ class TestCountMessagesForAgent:
         """Test counting messages includes →[All] messages."""
         mock_result = MagicMock()
         mock_result.stdout = (
-            '{"id": "beads-123", "title": "MESSAGE: A→[All]: announcement"}\n'
+            "○ orchestrator-123 ● P3 MESSAGE: A→[All]: announcement\n"
         )
         mock_result.stderr = ""
-        
+
         with patch('subprocess.run', return_value=mock_result):
             count = service.count_messages_for_agent("Developer")
             assert count == 1
@@ -229,3 +229,114 @@ class TestCountMessagesForAgent:
         with patch('subprocess.run', side_effect=Exception("error")):
             count = service.count_messages_for_agent("Developer")
             assert count == 0
+
+
+class TestBdListParsingEdgeCases:
+    """Edge case tests for bd list output parsing."""
+
+    def test_count_pending_messages_with_all_messages(self, service):
+        """Test counting includes [All] messages."""
+        mock_result = MagicMock()
+        mock_result.stdout = (
+            "○ orchestrator-123 ● P3 MESSAGE: A→[All]: announcement\n"
+            "○ orchestrator-124 ● P3 MESSAGE: B→C: direct message\n"
+        )
+        with patch('subprocess.run', return_value=mock_result):
+            count = service.count_pending_messages()
+            assert count == 2
+
+    def test_count_pending_messages_malformed_lines(self, service):
+        """Test handling of malformed output lines."""
+        mock_result = MagicMock()
+        mock_result.stdout = (
+            "○ orchestrator-123 ● P3 MESSAGE: A→B: valid\n"
+            "Some random line without MESSAGE\n"
+            "○ orchestrator-124 ● P3 MESSAGE: incomplete\n"
+            "○ malformed line\n"
+        )
+        with patch('subprocess.run', return_value=mock_result):
+            count = service.count_pending_messages()
+            assert count == 2  # Lines with MESSAGE: keyword
+
+    def test_get_messages_different_status_symbols(self, service):
+        """Test parsing with different status symbols."""
+        mock_result = MagicMock()
+        mock_result.stdout = (
+            "○ orchestrator-123 ● P3 MESSAGE: A→B: open message\n"
+            "✓ orchestrator-124 ● P3 MESSAGE: C→B: closed but open task\n"
+            "◐ orchestrator-125 ● P3 MESSAGE: D→B: in progress\n"
+            "● orchestrator-126 ● P3 MESSAGE: E→B: blocked\n"
+        )
+        with patch('subprocess.run', return_value=mock_result):
+            messages = service.get_messages_for_agent("B")
+            assert "open message" in messages
+            assert "closed but open task" in messages
+            assert "in progress" in messages
+            assert "blocked" in messages
+
+    def test_get_pending_messages_malformed_lines(self, service):
+        """Test handling malformed lines in get_pending_messages_by_agent."""
+        mock_result = MagicMock()
+        mock_result.stdout = (
+            "○ orchestrator-123 ● P3 MESSAGE: A→Developer: valid\n"
+            "malformed line without proper format\n"
+            "○ orchestrator-124 ● P3 MESSAGE: no arrow in message\n"
+            "○ orchestrator-125 ● P3 MESSAGE: B→Tester: also valid\n"
+        )
+        with patch('subprocess.run', return_value=mock_result):
+            result = service.get_pending_messages_by_agent()
+            assert "Developer" in result
+            assert "Tester" in result
+            assert len(result) == 2
+
+    def test_count_messages_mixed_all_and_targeted(self, service):
+        """Test counting with mixed [All] and targeted messages."""
+        mock_result = MagicMock()
+        mock_result.stdout = (
+            "○ orchestrator-123 ● P3 MESSAGE: A→[All]: announcement 1\n"
+            "○ orchestrator-124 ● P3 MESSAGE: B→Developer: specific\n"
+            "○ orchestrator-125 ● P3 MESSAGE: C→[All]: announcement 2\n"
+            "○ orchestrator-126 ● P3 MESSAGE: D→Developer: another specific\n"
+        )
+        with patch('subprocess.run', return_value=mock_result):
+            count = service.count_messages_for_agent("Developer")
+            assert count == 4  # 2 targeted + 2 [All]
+
+    def test_get_messages_special_characters_in_agent_names(self, service):
+        """Test parsing with special characters in agent names."""
+        mock_result = MagicMock()
+        mock_result.stdout = (
+            "○ orchestrator-123 ● P3 MESSAGE: AI-Agent→Developer: message\n"
+            "○ orchestrator-124 ● P3 MESSAGE: Dev_Ops→[All]: update\n"
+        )
+        with patch('subprocess.run', return_value=mock_result):
+            messages = service.get_messages_for_agent("Developer")
+            assert "message" in messages
+            assert "update" in messages
+
+    def test_get_pending_messages_by_agent_with_all(self, service):
+        """Test [All] messages are grouped correctly."""
+        mock_result = MagicMock()
+        mock_result.stdout = (
+            "○ orchestrator-123 ● P3 MESSAGE: A→[All]: broadcast\n"
+            "○ orchestrator-124 ● P3 MESSAGE: B→Developer: specific\n"
+        )
+        with patch('subprocess.run', return_value=mock_result):
+            result = service.get_pending_messages_by_agent()
+            assert "All" in result  # Regex extracts 'All' from '[All]'
+            assert "Developer" in result
+            assert len(result["All"]) == 1
+            assert len(result["Developer"]) == 1
+
+    def test_count_pending_messages_updated_format(self, service):
+        """Test count_pending_messages with realistic human-readable format."""
+        mock_result = MagicMock()
+        mock_result.stdout = (
+            "○ orchestrator-123 ● P3 MESSAGE: A→B: hello\n"
+            "○ orchestrator-124 ● P2 task Regular task\n"
+            "○ orchestrator-125 ● P3 MESSAGE: C→D: world\n"
+            "✓ orchestrator-126 ● P1 MESSAGE: E→F: done but still open\n"
+        )
+        with patch('subprocess.run', return_value=mock_result):
+            count = service.count_pending_messages()
+            assert count == 3  # Only MESSAGE: lines

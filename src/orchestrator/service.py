@@ -155,32 +155,32 @@ class OrchestrationService:
         """
         try:
             result = subprocess.run(
-                ["bd", "list", "--status=open", "--json"],
+                ["bd", "list", "--status=open"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True
             )
-            
+
             messages = []
-            
-            # Parse JSONL output (one JSON object per line)
+
+            # Parse human-readable output format:
+            # ○ orchestrator-ymq ● P4 Test JSON output verification
+            # ✓ orchestrator-66w ● P1 task Description here
             for line in result.stdout.strip().splitlines():
-                if not line.strip():
+                if not line.strip() or "MESSAGE:" not in line:
                     continue
-                try:
-                    import json
-                    bead = json.loads(line)
-                    title = bead.get("title", "")
-                    bead_id = bead.get("id", "")
-                    
-                    if "MESSAGE:" in title:
+                # Extract bead ID (project-xxx format, e.g., orchestrator-xxx, bd-123)
+                match = re.search(r'([\w]+-[\w]+)', line)
+                if match:
+                    bead_id = match.group(1)
+                    # Extract title (everything after the priority)
+                    title_match = re.search(r'P[0-4]\s+(.+)$', line)
+                    if title_match:
+                        title = title_match.group(1)
                         # Check if message is for this agent or [All]
                         if f"→{agent_name}" in title or "→[All]" in title:
-                            # Format with bead ID for agent reference
                             messages.append(f"[{bead_id}] {title}")
-                except json.JSONDecodeError:
-                    continue
-            
+
             return "\n".join(messages) if messages else "No new messages"
         except Exception as e:
             print_error(f"Failed to get messages for {agent_name}: {e}")
@@ -228,27 +228,23 @@ class OrchestrationService:
         """Counts pending messages for a specific agent."""
         try:
             result = subprocess.run(
-                ["bd", "list", "--status=open", "--json"],
+                ["bd", "list", "--status=open"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True
             )
             count = 0
-            
+
             for line in result.stdout.strip().splitlines():
-                if not line.strip():
+                if not line.strip() or "MESSAGE:" not in line:
                     continue
-                try:
-                    import json
-                    bead = json.loads(line)
-                    title = bead.get("title", "")
-                    
-                    if "MESSAGE:" in title:
-                        if f"→{agent_name}" in title or "→[All]" in title:
-                            count += 1
-                except json.JSONDecodeError:
-                    continue
-            
+                # Extract title (everything after the priority)
+                title_match = re.search(r'P[0-4]\s+(.+)$', line)
+                if title_match:
+                    title = title_match.group(1)
+                    if f"→{agent_name}" in title or "→[All]" in title:
+                        count += 1
+
             return count
         except Exception as e:
             print_error(f"Failed to count messages for {agent_name}: {e}")
@@ -261,24 +257,28 @@ class OrchestrationService:
         """
         try:
             result = subprocess.run(
-                ["bd", "list", "--status=open", "--json"],
+                ["bd", "list", "--status=open"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True
             )
-            
+
             messages_by_agent: Dict[str, List[Dict]] = {}
-            
-            # Parse JSONL output (one JSON object per line)
+
+            # Parse human-readable output format:
+            # ○ orchestrator-ymq ● P4 Test JSON output verification
+            # ✓ orchestrator-66w ● P1 task Description here
             for line in result.stdout.strip().splitlines():
-                if not line.strip():
+                if not line.strip() or "MESSAGE:" not in line:
                     continue
-                try:
-                    import json
-                    bead = json.loads(line)
-                    title = bead.get("title", "")
-                    bead_id = bead.get("id", "")
-                    
+                # Extract bead ID (project-xxx format, e.g., orchestrator-xxx, bd-123)
+                id_match = re.search(r'([\w]+-[\w]+)', line)
+                # Extract title (everything after the priority)
+                title_match = re.search(r'P[0-4]\s+(.+)$', line)
+                if id_match and title_match:
+                    bead_id = id_match.group(1)
+                    title = title_match.group(1)
+
                     if "MESSAGE:" in title:
                         # Extract target agent from title
                         # Format: "MESSAGE: [timestamp] FromAgent→ToAgent: content"
@@ -288,9 +288,7 @@ class OrchestrationService:
                             if target_agent not in messages_by_agent:
                                 messages_by_agent[target_agent] = []
                             messages_by_agent[target_agent].append({'id': bead_id, 'title': title})
-                except json.JSONDecodeError:
-                    continue
-            
+
             return messages_by_agent
         except Exception as e:
             print_error(f"Failed to get pending messages: {e}")

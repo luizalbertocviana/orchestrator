@@ -62,16 +62,16 @@ def test_messaging(service):
     with patch('orchestrator.service.beads.send_message', side_effect=Exception("error")):
         assert service.send_message("A", "B", "msg") is False
 
-    # Mock subprocess.run for get_messages_for_agent (uses bd list --json)
+    # Mock subprocess.run for get_messages_for_agent (uses bd list --status=open)
     mock_result = MagicMock()
-    mock_result.stdout = '{"id": "beads-123", "title": "MESSAGE: A→B: hello"}\n{"id": "beads-124", "title": "MESSAGE: B→[All]: hi"}\n'
+    mock_result.stdout = "○ orchestrator-123 ● P3 MESSAGE: A→B: hello\n○ orchestrator-124 ● P3 MESSAGE: B→[All]: hi\n"
     mock_result.stderr = ""
-    
+
     with patch('subprocess.run', return_value=mock_result):
         messages = service.get_messages_for_agent("B")
         assert "hello" in messages
         assert "hi" in messages
-        assert "beads-123" in messages
+        assert "orchestrator-123" in messages
 
 def test_mark_message_read(service):
     with patch('orchestrator.service.beads.close_issue') as mock_close:
