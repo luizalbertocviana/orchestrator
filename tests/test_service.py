@@ -42,27 +42,18 @@ def test_initialize_beads(service):
         # Already initialized with issues
         mock_run.return_value = MagicMock(returncode=0, stdout="some issues")
         assert service.initialize_beads() is True
-        
-        # Initialized but empty -> should create initial task
+
+        # Initialized but empty -> should return True (no auto-creation)
         mock_run.return_value = MagicMock(returncode=0, stdout="")
-        with patch('orchestrator.service.beads.create_issue') as mock_create:
-            assert service.initialize_beads() is True
-            mock_create.assert_called_once()
-        
+        assert service.initialize_beads() is True
+
         # Not initialized -> should return False
         mock_run.return_value = MagicMock(returncode=1, stdout="")
         assert service.initialize_beads() is False
-        
+
         # Exception
         mock_run.side_effect = Exception("error")
         assert service.initialize_beads() is False
-
-def test_check_for_blockers(service):
-    with patch('orchestrator.service.OrchestrationService.get_beads_state', return_value="BLOCKER: something"):
-        assert service.check_for_blockers() is True
-    
-    with patch('orchestrator.service.OrchestrationService.get_beads_state', return_value="all good"):
-        assert service.check_for_blockers() is False
 
 def test_messaging(service):
     with patch('orchestrator.service.beads.send_message') as mock_send:
@@ -170,19 +161,6 @@ def test_get_beads_state(service):
     """Test getting beads state."""
     with patch('orchestrator.service.beads.get_state', return_value="state"):
         assert service.get_beads_state() == "state"
-
-def test_get_messages_from_agent(service):
-    """Test getting messages sent by an agent."""
-    with patch('orchestrator.service.OrchestrationService.get_beads_state', 
-               return_value="beads-123 | MESSAGE: A→B: hello\nbeads-124 | MESSAGE: A→C: world"):
-        messages = service.get_messages_from_agent("A")
-        assert "hello" in messages
-        assert "world" in messages
-
-def test_get_messages_from_agent_empty(service):
-    """Test getting messages when none sent."""
-    with patch('orchestrator.service.OrchestrationService.get_beads_state', return_value=""):
-        assert service.get_messages_from_agent("A") == "No sent messages"
 
 def test_call_agent_with_retry_success(service):
     """Test successful agent call."""

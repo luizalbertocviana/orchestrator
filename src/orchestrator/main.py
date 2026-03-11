@@ -42,15 +42,15 @@ def parse_messages(output: str) -> List[Tuple[str, str, str]]:
 def parse_mark_read(output: str) -> List[str]:
     """
     Extracts MARK_READ: patterns from agent output.
-    Returns list of bead IDs (e.g., ['beads-123', 'beads-124']).
-    Format: MARK_READ: beads-XXX or MARK_READ: beads-XXX, beads-YYY
+    Returns list of bead IDs (e.g., ['orchestrator-123', 'orchestrator-124']).
+    Format: MARK_READ: orchestrator-XXX or MARK_READ: orchestrator-XXX, orchestrator-YYY
     """
     bead_ids = []
     pattern = r'MARK_READ:\s*([^\n]+)'
     matches = re.findall(pattern, output, re.IGNORECASE)
     for match in matches:
-        # Split by comma and extract bead IDs
-        ids = re.findall(r'[\w]+', match)
+        # Split by comma and extract bead IDs (include hyphens in ID pattern)
+        ids = re.findall(r'[\w-]+', match)
         bead_ids.extend(ids)
     return bead_ids
 
