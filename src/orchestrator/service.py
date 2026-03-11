@@ -129,12 +129,6 @@ class OrchestrationService:
                 print_info("Please run 'bd init' manually to set up beads in this repository.")
                 return False
             
-            # If initialized but empty, we can still create the initial task
-            if not result.stdout.strip():
-                print_info("Beads is empty. Creating initial task...")
-                beads.create_issue("Phase: Requirements Analysis - Review and refine specs.md")
-                print_success("Initial bead task created")
-            
             return True
         except Exception as e:
             print_error(f"Failed to verify beads initialization: {e}")
