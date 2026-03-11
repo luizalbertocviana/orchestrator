@@ -138,14 +138,6 @@ class OrchestrationService:
         """Returns the full project state from beads."""
         return beads.get_state()
 
-    def check_for_blockers(self) -> bool:
-        """Checks if there are any critical errors or blockers in beads."""
-        state = self.get_beads_state()
-        import re
-        if re.search(r"(BLOCKER|CRITICAL|ERROR)", state, re.IGNORECASE):
-            return True
-        return False
-
     def send_message(self, from_agent: str, to_agent: str, content: str) -> bool:
         """Sends an inter-agent message via beads."""
         try:
@@ -193,16 +185,6 @@ class OrchestrationService:
         except Exception as e:
             print_error(f"Failed to get messages for {agent_name}: {e}")
             return "No new messages"
-
-    def get_messages_from_agent(self, agent_name: str) -> str:
-        """Retrieves messages sent by this agent."""
-        all_beads = self.get_beads_state()
-        messages = []
-        for line in all_beads.splitlines():
-            if "MESSAGE:" in line and f"{agent_name}→" in line:
-                messages.append(line)
-        
-        return "\n".join(messages) if messages else "No sent messages"
 
     def mark_message_read(self, bead_id: str) -> bool:
         """Marks a message as read by closing the bead."""
