@@ -206,33 +206,25 @@ class OrchestrationService:
     
     def select_agent_by_messages(self) -> Optional[str]:
         """
-        Selects the agent with the most pending messages.
-        Uses AGENT_ROLE_ORDER for tie-breaking.
+        Selects the first agent in AGENT_ROLE_ORDER that has pending messages.
+        If no agent from the order has messages, falls back to any agent with messages.
         """
         messages_by_agent = self.get_pending_messages_by_agent()
-        
+
         if not messages_by_agent:
             return None
-        
-        # Find agent with most messages
-        max_count = 0
-        selected_agent = None
-        
+
+        # Find the first agent in order that has any messages
         for agent_name in AGENT_ROLE_ORDER:
-            if agent_name in messages_by_agent:
-                count = len(messages_by_agent[agent_name])
-                if count > max_count:
-                    max_count = count
-                    selected_agent = agent_name
-        
+            if agent_name in messages_by_agent and messages_by_agent[agent_name]:
+                return agent_name
+
         # If no agent from the order has messages, pick the first one with messages
-        if not selected_agent:
-            for agent_name, messages in messages_by_agent.items():
-                if messages:
-                    selected_agent = agent_name
-                    break
-        
-        return selected_agent
+        for agent_name, messages in messages_by_agent.items():
+            if messages:
+                return agent_name
+
+        return None
     
     def commit_changes(self, agent_name: str, message: str) -> bool:
         """Commits changes to git if any."""

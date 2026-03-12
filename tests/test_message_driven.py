@@ -109,8 +109,8 @@ class TestGetPendingMessagesByAgent:
 class TestSelectAgentByMessages:
     """Tests for select_agent_by_messages()."""
 
-    def test_select_agent_most_messages(self, service):
-        """Test selecting agent with most pending messages."""
+    def test_select_agent_first_in_order(self, service):
+        """Test selecting first agent in order with pending messages."""
         service.broker.get_all_pending.return_value = [
             {"id": "1", "to": "Developer"},
             {"id": "2", "to": "Developer"},
@@ -120,18 +120,18 @@ class TestSelectAgentByMessages:
             {"id": "6", "to": "Requirements Analyst"},
         ]
         agent = service.select_agent_by_messages()
-        assert agent == "Developer"
+        # Requirements Analyst comes first in order and has messages
+        assert agent == "Requirements Analyst"
 
-    def test_select_agent_tie_breaker(self, service):
-        """Test tie-breaking by role order."""
+    def test_select_agent_skips_empty_agents(self, service):
+        """Test that agents without messages are skipped in order."""
         service.broker.get_all_pending.return_value = [
             {"id": "1", "to": "Developer"},
             {"id": "2", "to": "Tester"},
-            {"id": "3", "to": "Requirements Analyst"},
         ]
         agent = service.select_agent_by_messages()
-        # Requirements Analyst comes first in AGENT_ROLE_ORDER
-        assert agent == "Requirements Analyst"
+        # Requirements Analyst and Architect/Designer have no messages, skip to Developer
+        assert agent == "Developer"
 
     def test_select_agent_no_messages(self, service):
         """Test with no pending messages."""
