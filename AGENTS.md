@@ -1,9 +1,22 @@
 # Agent Instructions
 
-This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get started.
+**For AI Assistants working on THIS repository** (the orchestrator project).
+
+This project uses a **message broker** (`tools/broker`) for inter-agent communication in the SDLC system.
+
+**Note**: `bd` (beads) is used by **you (the AI assistant)** and human developers to track issues for THIS project. The SDLC agents (Requirements Analyst, Developer, etc.) do NOT use beads - they communicate exclusively via the broker.
 
 ## Quick Reference
 
+### For SDLC Agent Communication (broker)
+```bash
+$BROKER_PATH read "Agent Name"           # Read your messages
+$BROKER_PATH send --from X --to Y --content Z  # Send a message
+$BROKER_PATH ack msg_id1 msg_id2         # Acknowledge messages
+$BROKER_PATH onboard                     # Show usage instructions
+```
+
+### For Issue Tracking (bd)
 ```bash
 bd ready              # Find available work
 bd show <id>          # View issue details
@@ -36,10 +49,76 @@ cp -rf source dest          # NOT: cp -r source dest
 - `apt-get` - use `-y` flag
 - `brew` - use `HOMEBREW_NO_AUTO_UPDATE=1` env var
 
-<!-- BEGIN BEADS INTEGRATION -->
+---
+
+## Inter-Agent Messaging with Broker
+
+**IMPORTANT**: This project uses a **JSONL-based message broker** for inter-agent communication in the SDLC system.
+
+### Why Broker?
+
+- Lightweight: Shell script with no external dependencies (only `jq`)
+- Simple: JSONL storage with flock-based locking
+- Direct: Agents call broker commands directly
+- Persistent: Messages stored in `messages.jsonl`
+
+### Quick Start
+
+**Read your messages:**
+```bash
+$BROKER_PATH read "Your Agent Name"
+```
+
+**Send a message:**
+```bash
+$BROKER_PATH send --from "Your Agent Name" --to "Target Agent" --content "message content"
+```
+
+**Acknowledge processed messages:**
+```bash
+$BROKER_PATH ack msg_1234567890_a1b2c3d4
+```
+
+### Message Schema
+
+```json
+{
+  "id": "msg_<timestamp>_<random>",
+  "from": "agent-name",
+  "to": "agent-name",
+  "content": "message body",
+  "timestamp_sent": "ISO8601",
+  "timestamp_ack": "ISO8601 or null"
+}
+```
+
+### Workflow for SDLC Agents
+
+1. **Receive context**: Your activation includes `$BROKER_PATH` (absolute path to broker script)
+2. **Read messages**: Call `$BROKER_PATH read "Your Agent Name"` to get pending messages
+3. **Process messages**: Act on the information/requests in messages
+4. **Send messages**: Call `$BROKER_PATH send` to communicate with other agents
+5. **Acknowledge**: Call `$BROKER_PATH ack` for ALL processed messages
+
+### Important Rules
+
+- ✅ Use broker for ALL inter-agent communication
+- ✅ Read your messages at the start of each activation
+- ✅ Send at least one message per activation
+- ✅ Acknowledge ALL processed messages
+- ✅ Use `$BROKER_PATH` from context (absolute path, works from any directory)
+- ❌ Do NOT use MESSAGE:/MARK_READ: output patterns
+- ❌ Do NOT use beads for inter-agent messages (bd is for issue tracking only)
+
+---
+
 ## Issue Tracking with bd (beads)
 
-**IMPORTANT**: This project uses **bd (beads)** for ALL issue tracking. Do NOT use markdown TODOs, task lists, or other tracking methods.
+**IMPORTANT**: `bd` (beads) is used by **you (the AI assistant)** and human developers to track issues for THIS orchestrator project. The SDLC agents (Requirements Analyst, Developer, Tester, etc.) do NOT use beads - they use the broker for inter-agent communication.
+
+**This distinction matters:**
+- **You (AI assistant)**: Use `bd` to track your work on THIS repository
+- **SDLC agents**: Use `broker` to communicate while developing OTHER projects
 
 ### Why bd?
 
@@ -92,7 +171,7 @@ bd close bd-42 --reason "Completed" --json
 - `3` - Low (polish, optimization)
 - `4` - Backlog (future ideas)
 
-### Workflow for AI Agents
+### Workflow for AI Assistants
 
 1. **Check ready work**: `bd ready` shows unblocked issues
 2. **Claim your task atomically**: `bd update <id> --claim`
@@ -111,7 +190,7 @@ bd automatically syncs with git:
 
 ### Important Rules
 
-- ✅ Use bd for ALL task tracking
+- ✅ Use bd for ALL task tracking (AI assistants and humans)
 - ✅ Always use `--json` flag for programmatic use
 - ✅ Link discovered work with `discovered-from` dependencies
 - ✅ Check `bd ready` before asking "what should I work on?"
@@ -120,6 +199,8 @@ bd automatically syncs with git:
 - ❌ Do NOT duplicate tracking systems
 
 For more details, see README.md and docs/QUICKSTART.md.
+
+---
 
 ## Landing the Plane (Session Completion)
 
@@ -147,4 +228,15 @@ For more details, see README.md and docs/QUICKSTART.md.
 - NEVER say "ready to push when you are" - YOU must push
 - If push fails, resolve and retry until it succeeds
 
-<!-- END BEADS INTEGRATION -->
+---
+
+## Summary
+
+**Two Systems:**
+1. **Broker** (`tools/broker`): Inter-agent messaging for SDLC workflow
+2. **bd (beads)**: Issue tracking for project management
+
+**Key Commands:**
+- `$BROKER_PATH read/send/ack`: Agent communication
+- `bd ready/create/close`: Issue tracking
+- `git pull/push`: Version control

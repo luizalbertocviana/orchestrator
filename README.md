@@ -1,12 +1,12 @@
 # Message-Driven Multi-Agent SDLC System
 
-A complete multi-agent system designed to manage the full cycle of software development. Each agent has a specialized role, and they collaborate through **inter-agent messages** tracked in a shared task management system (**Beads**) and version control (**Git**). Agents are activated based on message demand—whichever agent has the most pending messages gets selected next.
+A complete multi-agent system designed to manage the full cycle of software development. Each agent has a specialized role, and they collaborate through **inter-agent messages** managed by a **JSONL-based message broker**. Agents are activated based on message demand—whichever agent has the most pending messages gets selected next.
 
 ## Core Components
 
 - **Message-Driven Activation**: Agents are selected dynamically based on pending message count, with tie-breaking by SDLC role order.
 - **Agents**: Specialized AI agents (Requirements Analyst, Architect, Developer, Tester, etc.) that perform specific SDLC tasks.
-- **Beads**: A task-tracking and project management tool for agent coordination and message persistence.
+- **Broker**: A lightweight JSONL-based message broker (`tools/broker`) for inter-agent communication.
 - **Git**: Version control for code and documentation.
 
 ## Agent Roles
@@ -28,13 +28,16 @@ A complete multi-agent system designed to manage the full cycle of software deve
 ├── src/orchestrator/       # Core Python implementation
 │   ├── main.py             # Main entry point (message-driven loop)
 │   ├── agents.py           # Agent definitions and prompts
-│   ├── beads.py            # Beads integration logic
+│   ├── broker_wrapper.py   # Broker integration logic
 │   ├── config.py           # Configuration management
 │   ├── service.py          # Orchestration service layer
 │   └── utils.py            # Shared utility functions
-├── tests/                  # Comprehensive test suite (96% coverage)
+├── tools/
+│   └── broker              # Shell-based message broker
+├── tests/                  # Comprehensive test suite (99% coverage)
 ├── multi_agent_sdlc_system.md # Detailed agent prompts and system documentation
 ├── orchestrate_sdlc.sh     # Shell wrapper to run the system
+├── AGENTS.md               # Agent instructions (broker usage)
 └── README.md               # This file
 ```
 
@@ -43,8 +46,9 @@ A complete multi-agent system designed to manage the full cycle of software deve
 ### Prerequisites
 
 - [uv](https://github.com/astral-sh/uv) - Fast Python package and project manager.
-- [beads](https://github.com/steveyegge/beads) - Task management for agents.
+- [jq](https://stedolan.github.io/jq/) - Command-line JSON processor (used by broker).
 - Git - Version control.
+- Bash - Shell environment for broker script.
 
 ### Installation
 
@@ -59,10 +63,9 @@ A complete multi-agent system designed to manage the full cycle of software deve
     uv sync
     ```
 
-3.  Initialize Beads in your project repository:
+3.  Ensure broker script is executable:
     ```bash
-    # Navigate to your project directory (where you want to run the SDLC)
-    bd init
+    chmod +x tools/broker
     ```
 
 ### Usage
@@ -77,52 +80,69 @@ This will start the message-driven SDLC process in your current working director
 
 ## Workflow
 
-1.  **Initialization**: The system verifies prerequisites (Git, Beads, required CLI agents) and ensures a `specs.md` file exists.
-    -   **Note**: If Beads is not initialized, you will be prompted to run `bd init` manually.
-2.  **Bootstrap**: One initial message is created for each agent role to kickstart the system.
+1.  **Initialization**: The system verifies prerequisites (Git, broker script, required CLI agents) and ensures a `specs.md` file exists.
+2.  **Bootstrap**: One initial message is created for each agent role using `broker send`.
 3.  **Message-Driven Cycle**:
     -   System selects the agent with the most pending messages (tie-break by SDLC role order).
-    -   The chosen agent receives messages in its context, processes them, and outputs:
-        -   `MESSAGE: [AgentName]→[TargetAgent]: <content>` - sends messages to other agents
-        -   `MARK_READ: beads-XXX` - marks processed messages as read
-    -   System parses agent output, registers new messages, and closes read messages.
+    -   The chosen agent receives context (including `$BROKER_PATH`), and calls broker directly:
+        -   `broker read` - reads pending messages
+        -   `broker send` - sends messages to other agents
+        -   `broker ack` - acknowledges processed messages
+    -   System commits changes and tags iteration.
     -   Cycle repeats with the next agent selection.
 4.  **Completion**: The process terminates when no pending messages remain (all messages processed) or max iterations is reached.
 
 ## Inter-Agent Messaging
 
-Agents communicate through structured messages stored in Beads:
+Agents communicate through structured messages stored in `messages.jsonl`:
 
-### Message Format (Agent Output)
-```
-MESSAGE: [YourAgentName]→[TargetAgent]: <content>
-```
+### Broker Commands
 
-Example:
-```
-MESSAGE: [Developer]→[Tester]: Code ready for testing. Unit tests passing.
-MESSAGE: [Tester]→[Developer]: BUG: Login fails with empty password.
+**Read Messages:**
+```bash
+$BROKER_PATH read "Agent Name"
+$BROKER_PATH read "Agent Name" --all   # Include acknowledged
 ```
 
-### Mark Messages as Read
+**Send Messages:**
+```bash
+$BROKER_PATH send --from "Developer" --to "Tester" --content "Code ready for testing"
 ```
-MARK_READ: beads-123, beads-124, beads-125
+
+**Acknowledge Messages:**
+```bash
+$BROKER_PATH ack msg_1234567890_a1b2c3d4
+$BROKER_PATH ack msg_id1 msg_id2 msg_id3   # Multiple at once
 ```
+
+### Message Schema
+
+```json
+{
+  "id": "msg_<timestamp>_<random>",
+  "from": "agent-name",
+  "to": "agent-name",
+  "content": "message body",
+  "timestamp_sent": "ISO8601",
+  "timestamp_ack": "ISO8601 or null"
+}
+```
+
+### Agent Messaging Requirements
 
 Agents **MUST**:
-- Send at least one MESSAGE to another agent per activation
-- Mark all processed messages as read using MARK_READ: with bead IDs
+- Call `broker read` to retrieve messages at the start of each activation
+- Act on the information/requests in messages
+- Send **at least one** `broker send` message to another agent per activation
+- Call `broker ack` to acknowledge ALL processed messages
 
-### Message Display in Agent Context
-Agents receive messages in this format:
-```
-[beads-123] MESSAGE: [Architect/Designer]→[Developer]: API specs in docs/api.md.
-[beads-124] MESSAGE: [Requirements Analyst]→[Developer]: Priority features in specs.md section 3.
-```
+### Context Injection
+
+Agents receive `$BROKER_PATH` in their context—an absolute path to the broker script. This ensures agents can call the broker from any working directory.
 
 ## Agent Selection Algorithm
 
-1. Count pending (unclosed) MESSAGE: beads per target agent
+1. Count pending (unacknowledged) messages per target agent
 2. Select agent with highest count
 3. If tie, use SDLC role order:
    1. Requirements Analyst
@@ -135,22 +155,12 @@ Agents receive messages in this format:
    8. Git Maintainer
    9. Documentation Specialist
 
-## Task Tracking with Beads
-
-This project uses `beads` for all task tracking. Use the following commands to interact with the project state:
-
-- `bd list`: List all tasks.
-- `bd ready`: Show tasks ready for work.
-- `bd show <id>`: Get details for a specific task.
-- `bd prime`: Register project usage aspects (essential for agent context).
-
 ## Collaboration and Persistence
 
 This system is designed for multi-agent collaboration and long-term memory:
 
-- **Syncing**: Use `bd dolt pull` and `bd dolt push` to synchronize task state with a Dolt remote.
-- **Memories**: Use `bd remember "insight"` to store persistent knowledge that agents can access in future sessions.
-- **Search**: Use `bd memories <keyword>` to find stored insights.
+- **Message Persistence**: Messages stored in `messages.jsonl` (JSONL format with flock locking)
+- **Git Integration**: All changes committed and tagged per iteration
 
 ## Testing
 
@@ -160,7 +170,16 @@ The system has comprehensive test coverage:
 # Run tests with coverage
 PYTHONPATH=src uv run pytest --cov=src/orchestrator --cov-report=term-missing
 
-# Current coverage: 96% (65 tests)
+# Current coverage: 99% (125 tests)
 ```
+
+## Architecture Notes
+
+### Key Design Decisions
+
+- **No MESSAGE:/MARK_READ: parsing**: Agents call broker directly, no output parsing needed
+- **Absolute broker path**: `$BROKER_PATH` in context ensures agents work from any directory
+- **Simplified orchestrator**: Only creates bootstrap messages and selects agents
+- **Agent autonomy**: Each agent responsible for its own message handling
 
 ---

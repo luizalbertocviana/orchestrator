@@ -5,7 +5,7 @@ class OrchestratorConfig(BaseModel):
     max_retries: int = 3
     max_iterations: int = 24
     agent_timeout_limit: str = "1200s"
-    
+
     agents: List[str] = ["opencode", "gemini", "qwen", "cline", "codex"]
     agent_flags: Dict[str, str] = {
         "opencode": "run",
@@ -14,8 +14,8 @@ class OrchestratorConfig(BaseModel):
         "cline": "-a -y",
         "codex": "--full-auto exec --skip-git-repo-check",
     }
-    
-    required_tools: List[str] = ["git", "bd", "jq"]
+
+    required_tools: List[str] = ["git", "jq"]
 
 # Default configuration instance
 config = OrchestratorConfig()

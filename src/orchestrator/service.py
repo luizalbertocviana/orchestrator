@@ -1,13 +1,24 @@
+"""Orchestration service for the message-driven multi-agent SDLC system.
+
+This service provides:
+- Bootstrap message creation at startup
+- Agent selection based on pending message count
+- Agent activation with context
+- Git commit after each iteration
+
+Agents communicate directly via the broker script (broker send/read/ack).
+"""
+
 import shutil
 import subprocess
 import os
 import time
-import datetime
-import re
-from typing import List, Optional, Dict, Tuple
+from typing import List, Optional, Dict
+from pathlib import Path
+
 from orchestrator.config import config
 from orchestrator.agents import registry, Agent
-from orchestrator.beads import beads
+from orchestrator.broker_wrapper import BrokerWrapper, get_broker
 from orchestrator.utils import print_info, print_error, print_success, print_header, print_warning
 
 # Agent role ordering for tie-breaking (SDLC order)
@@ -23,10 +34,19 @@ AGENT_ROLE_ORDER = [
     "Documentation Specialist"
 ]
 
-class OrchestrationService:
-    def __init__(self):
-        self.available_cli_agents = self._get_available_cli_agents()
 
+class OrchestrationService:
+    """Service for orchestrating the multi-agent SDLC system."""
+    
+    def __init__(self, broker: Optional[BrokerWrapper] = None):
+        """Initialize the orchestration service.
+        
+        Args:
+            broker: Optional BrokerWrapper instance. Uses global instance if not provided.
+        """
+        self.broker = broker or get_broker()
+        self.available_cli_agents = self._get_available_cli_agents()
+    
     def _get_available_cli_agents(self) -> List[str]:
         """Checks which configured CLI agents are available in the PATH."""
         print_info("Checking available cli agents...")
@@ -49,7 +69,7 @@ class OrchestrationService:
         
         print_info(f"Using sequential rotation across {len(available)} available cli agent(s): {' '.join(available)}")
         return available
-
+    
     def get_next_cli_agent(self, iteration: int) -> Optional[str]:
         """Selects the next CLI agent using sequential rotation."""
         if not self.available_cli_agents:
@@ -57,7 +77,7 @@ class OrchestrationService:
         
         index = (iteration - 1) % len(self.available_cli_agents)
         return self.available_cli_agents[index]
-
+    
     def verify_tools(self) -> bool:
         """Verifies that required tools are available."""
         missing = []
@@ -69,17 +89,21 @@ class OrchestrationService:
             print_error(f"Missing required tools: {', '.join(missing)}")
             return False
         return True
-
+    
     def verify_git_repo(self) -> bool:
         """Verifies that we are in a git repository."""
         try:
-            subprocess.run(["git", "rev-parse", "--is-inside-work-tree"], 
-                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+            subprocess.run(
+                ["git", "rev-parse", "--is-inside-work-tree"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=True
+            )
             return True
         except subprocess.CalledProcessError:
             print_error("Not a git repository.")
             return False
-
+    
     def create_specs_template(self) -> None:
         """Creates a default specs.md template."""
         content = """# Project Specifications
@@ -111,189 +135,75 @@ class OrchestrationService:
         with open("specs.md", "w") as f:
             f.write(content)
         print_success("Created specs.md template")
-
+    
     def verify_specs_file(self) -> bool:
         """Verifies that specs.md exists."""
         if not os.path.exists("specs.md"):
             print_warning("specs.md not found. Creating empty specs.md...")
             self.create_specs_template()
         return True
-
+    
     def initialize_beads(self) -> bool:
-        """Verifies if beads is initialized."""
-        try:
-            # Check if bd list works
-            result = subprocess.run(["bd", "list"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-            if result.returncode != 0:
-                print_error("Beads is not initialized.")
-                print_info("Please run 'bd init' manually to set up beads in this repository.")
-                return False
-            
-            return True
-        except Exception as e:
-            print_error(f"Failed to verify beads initialization: {e}")
+        """Verifies that the broker script is available.
+
+        Note: Method name kept for backward compatibility.
+        """
+        if not self.broker.verify():
+            print_error("Broker script not found or not executable.")
+            print_info(f"Expected at: {self.broker.broker_path}")
             return False
+        return True
 
     def get_beads_state(self) -> str:
-        """Returns the full project state from beads."""
-        return beads.get_state()
-
-    def send_message(self, from_agent: str, to_agent: str, content: str) -> bool:
-        """Sends an inter-agent message via beads."""
-        try:
-            beads.send_message(from_agent, to_agent, content)
-            print_info(f"Message sent: {from_agent}→{to_agent}")
-            return True
-        except Exception as e:
-            print_warning(f"Failed to send message: {e}")
-            return False
-
-    def get_messages_for_agent(self, agent_name: str) -> str:
-        """
-        Retrieves messages addressed to this agent with bead IDs.
-        Format: [beads-XXX] MESSAGE: [FromAgent]→[TargetAgent]: content
-        """
-        try:
-            result = subprocess.run(
-                ["bd", "list", "--status=open"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True
-            )
-
-            messages = []
-
-            # Parse human-readable output format:
-            # ○ orchestrator-ymq ● P4 Test JSON output verification
-            # ✓ orchestrator-66w ● P1 task Description here
-            for line in result.stdout.strip().splitlines():
-                if not line.strip() or "MESSAGE:" not in line:
-                    continue
-                # Extract bead ID (project-xxx format, e.g., orchestrator-xxx, bd-123)
-                match = re.search(r'([\w]+-[\w]+)', line)
-                if match:
-                    bead_id = match.group(1)
-                    # Extract title (everything after the priority)
-                    title_match = re.search(r'P[0-4]\s+(.+)$', line)
-                    if title_match:
-                        title = title_match.group(1)
-                        # Check if message is for this agent or [All]
-                        if f"→{agent_name}" in title or "→[All]" in title:
-                            messages.append(f"[{bead_id}] {title}")
-
-            return "\n".join(messages) if messages else "No new messages"
-        except Exception as e:
-            print_error(f"Failed to get messages for {agent_name}: {e}")
-            return "No new messages"
-
-    def mark_message_read(self, bead_id: str) -> bool:
-        """Marks a message as read by closing the bead."""
-        try:
-            beads.close_issue(bead_id, reason="Marked as read")
-            print_info(f"Message marked as read: ID {bead_id}")
-            return True
-        except Exception as e:
-            print_warning(f"Failed to mark message as read: {e}")
-            return False
-
+        """Returns a summary of pending messages from broker."""
+        counts = self.broker.count_by_agent()
+        if not counts:
+            return "No pending messages"
+        
+        lines = ["Pending messages by agent:"]
+        for agent, count in sorted(counts.items(), key=lambda x: -x[1]):
+            lines.append(f"  {agent}: {count}")
+        return "\n".join(lines)
+    
     def create_bootstrap_messages(self) -> None:
         """Creates initial bootstrap messages to all agents at system startup."""
         bootstrap_content = "Bootstrap message to start the message-driven SDLC system. Begin your role and send messages to other agents as needed."
         for agent_name in AGENT_ROLE_ORDER:
             try:
-                beads.send_message("System", agent_name, bootstrap_content)
+                self.broker.send_message("System", agent_name, bootstrap_content)
                 print_info(f"Bootstrap message sent to: {agent_name}")
             except Exception as e:
                 print_warning(f"Failed to create bootstrap message for {agent_name}: {e}")
-
+    
     def count_pending_messages(self) -> int:
-        """Counts the number of pending (open) MESSAGE: beads."""
-        try:
-            result = subprocess.run(
-                ["bd", "list", "--status=open"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True
-            )
-            count = 0
-            for line in result.stdout.splitlines():
-                if "MESSAGE:" in line:
-                    count += 1
-            return count
-        except Exception as e:
-            print_error(f"Failed to count pending messages: {e}")
-            return 0
-
+        """Counts the total number of pending (unacknowledged) messages."""
+        all_pending = self.broker.get_all_pending()
+        return len(all_pending)
+    
     def count_messages_for_agent(self, agent_name: str) -> int:
         """Counts pending messages for a specific agent."""
-        try:
-            result = subprocess.run(
-                ["bd", "list", "--status=open"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True
-            )
-            count = 0
-
-            for line in result.stdout.strip().splitlines():
-                if not line.strip() or "MESSAGE:" not in line:
-                    continue
-                # Extract title (everything after the priority)
-                title_match = re.search(r'P[0-4]\s+(.+)$', line)
-                if title_match:
-                    title = title_match.group(1)
-                    if f"→{agent_name}" in title or "→[All]" in title:
-                        count += 1
-
-            return count
-        except Exception as e:
-            print_error(f"Failed to count messages for {agent_name}: {e}")
-            return 0
-
+        return self.broker.count_pending(agent_name)
+    
     def get_pending_messages_by_agent(self) -> Dict[str, List[Dict]]:
         """
         Gets all pending messages grouped by target agent.
-        Returns dict: {agent_name: [{'id': 'beads-xxx', 'title': '...'}, ...]}
+        
+        Returns:
+            Dict mapping agent names to lists of pending messages.
+            Each message is a dict with 'id', 'to', 'from', 'content', etc.
         """
-        try:
-            result = subprocess.run(
-                ["bd", "list", "--status=open"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True
-            )
-
-            messages_by_agent: Dict[str, List[Dict]] = {}
-
-            # Parse human-readable output format:
-            # ○ orchestrator-ymq ● P4 Test JSON output verification
-            # ✓ orchestrator-66w ● P1 task Description here
-            for line in result.stdout.strip().splitlines():
-                if not line.strip() or "MESSAGE:" not in line:
-                    continue
-                # Extract bead ID (project-xxx format, e.g., orchestrator-xxx, bd-123)
-                id_match = re.search(r'([\w]+-[\w]+)', line)
-                # Extract title (everything after the priority)
-                title_match = re.search(r'P[0-4]\s+(.+)$', line)
-                if id_match and title_match:
-                    bead_id = id_match.group(1)
-                    title = title_match.group(1)
-
-                    if "MESSAGE:" in title:
-                        # Extract target agent from title
-                        # Format: "MESSAGE: [timestamp] FromAgent→ToAgent: content"
-                        match = re.search(r'→\[?([^\]:]+)\]?:', title)
-                        if match:
-                            target_agent = match.group(1).strip()
-                            if target_agent not in messages_by_agent:
-                                messages_by_agent[target_agent] = []
-                            messages_by_agent[target_agent].append({'id': bead_id, 'title': title})
-
-            return messages_by_agent
-        except Exception as e:
-            print_error(f"Failed to get pending messages: {e}")
-            return {}
-
+        all_pending = self.broker.get_all_pending()
+        
+        messages_by_agent: Dict[str, List[Dict]] = {}
+        for msg in all_pending:
+            to_agent = msg.get("to", "")
+            if to_agent:
+                if to_agent not in messages_by_agent:
+                    messages_by_agent[to_agent] = []
+                messages_by_agent[to_agent].append(msg)
+        
+        return messages_by_agent
+    
     def select_agent_by_messages(self) -> Optional[str]:
         """
         Selects the agent with the most pending messages.
@@ -323,11 +233,7 @@ class OrchestrationService:
                     break
         
         return selected_agent
-
-    def register_message(self, from_agent: str, to_agent: str, content: str) -> bool:
-        """Registers a new message in beads."""
-        return self.send_message(from_agent, to_agent, content)
-
+    
     def commit_changes(self, agent_name: str, message: str) -> bool:
         """Commits changes to git if any."""
         try:
@@ -335,7 +241,11 @@ class OrchestrationService:
             # Check for changes
             diff = subprocess.run(["git", "diff", "--cached", "--quiet"])
             if diff.returncode != 0:
-                subprocess.run(["git", "commit", "-m", f"[{agent_name}] {message}"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                subprocess.run(
+                    ["git", "commit", "-m", f"[{agent_name}] {message}"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE
+                )
                 print_success(f"Changes committed: {message}")
                 return True
             else:
@@ -344,59 +254,60 @@ class OrchestrationService:
         except Exception as e:
             print_error(f"Failed to commit changes: {e}")
             return False
-
+    
     def get_git_status(self) -> str:
         """Returns the current git status."""
         try:
-            result = subprocess.run(["git", "status", "--short"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            result = subprocess.run(
+                ["git", "status", "--short"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
             return result.stdout.strip()
         except Exception:
             return "Error getting git status"
-
+    
     def get_git_log(self, n: int = 5) -> str:
         """Returns the recent git log entries."""
         try:
-            result = subprocess.run(["git", "log", "-n", str(n), "--oneline"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            result = subprocess.run(
+                ["git", "log", "-n", str(n), "--oneline"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
             return result.stdout.strip()
         except Exception:
             return "Error getting git log"
-
-    def get_beads_prime(self) -> str:
-        """Returns the output of bd prime."""
-        try:
-            result = subprocess.run(["bd", "prime"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-            return result.stdout.strip()
-        except Exception:
-            return "Error running bd prime"
-
+    
     def build_context(self, agent_name: str) -> str:
-        """Builds a comprehensive context for the agent."""
-        beads_state = self.get_beads_state()
+        """Builds context for the agent.
+
+        Note: Agents read their own messages directly from broker.
+        This context provides git status and project info only.
+        """
         git_status = self.get_git_status()
         git_log = self.get_git_log()
-        beads_prime = self.get_beads_prime()
-        messages = self.get_messages_for_agent(agent_name)
         cwd = os.getcwd()
+        broker_path = str(self.broker.broker_path)
 
-        return f"""=== BEADS PRIME ===
-{beads_prime}
-
-=== BEADS TASKS ===
-{beads_state}
-
-=== INTER-AGENT MESSAGES (addressed to you) ===
-{messages}
-
-=== GIT STATUS ===
-{git_status}
+        return f"""=== GIT STATUS ===
+{git_status if git_status else "Clean working tree"}
 
 === RECENT COMMITS ===
-{git_log}
+{git_log if git_log else "No commits yet"}
 
 === PROJECT ROOT ===
 {cwd}
-"""
 
+=== BROKER SCRIPT PATH ===
+{broker_path}
+
+=== BROKER STATUS ===
+{self.broker.generate_context()}
+"""
+    
     def call_agent_with_retry(self, logical_agent_name: str, prompt: str, context: str, iteration: int) -> Optional[str]:
         """Calls a CLI agent with retry and rotation logic."""
         full_prompt = f"{prompt}\n\nCURRENT PROJECT CONTEXT:\n{context}\n\nPlease proceed with your role and responsibilities."
@@ -405,9 +316,9 @@ class OrchestrationService:
         if not current_cli_agent:
             print_error("No CLI agents available.")
             return None
-
+        
         print_info(f"Selected cli agent: {current_cli_agent} (iteration: {iteration})")
-
+        
         attempt = 1
         agents_tried = []
         
@@ -416,7 +327,7 @@ class OrchestrationService:
             timeout_seconds = int(timeout_val[:-1])
         else:
             timeout_seconds = int(timeout_val)
-
+        
         while attempt <= config.max_retries:
             agents_tried.append(current_cli_agent)
             flags = config.agent_flags.get(current_cli_agent, "-y")
@@ -424,7 +335,6 @@ class OrchestrationService:
             print_info(f"Calling cli agent: {current_cli_agent} [{logical_agent_name}] (attempt {attempt}/{config.max_retries})")
             
             try:
-                # Use stderr=subprocess.STDOUT to match bash's 2>&1 behavior
                 process = subprocess.run(
                     [current_cli_agent] + flags.split() + [full_prompt],
                     stdout=subprocess.PIPE,
@@ -442,7 +352,7 @@ class OrchestrationService:
                 print_warning(f"cli agent {current_cli_agent} timed out after {timeout_seconds}s")
             except Exception as e:
                 print_warning(f"Error calling {current_cli_agent}: {e}")
-
+            
             if attempt < config.max_retries:
                 # Rotate to next agent for retry
                 current_cli_agent = self.get_next_cli_agent(iteration + attempt)
@@ -450,17 +360,23 @@ class OrchestrationService:
                 time.sleep(2)
             
             attempt += 1
-
+        
         print_error(f"All agent attempts failed. Tried: {', '.join(agents_tried)}")
         return None
-
+    
     def activate_agent(self, agent_name: str, iteration: int) -> Optional[str]:
-        """Activates a specific logical agent."""
+        """Activates a specific logical agent.
+        
+        The agent receives context and will call broker directly to:
+        - Read its messages: broker read <agent_name>
+        - Send messages: broker send --from <X> --to <Y> --content <msg>
+        - Acknowledge messages: broker ack <msg_id>
+        """
         agent = registry.get_agent(agent_name)
         if not agent:
             print_error(f"Unknown logical agent: {agent_name}")
             return None
-
+        
         print_info(f"Activating {agent_name} (Iteration {iteration})...")
         
         context = self.build_context(agent_name)
@@ -468,6 +384,7 @@ class OrchestrationService:
         
         output = self.call_agent_with_retry(agent_name, prompt, context, iteration)
         return output
+
 
 # Global service instance
 orchestration_service = OrchestrationService()

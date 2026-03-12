@@ -1,0 +1,246 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+MESSAGES_FILE="${MESSAGES_FILE:-messages.jsonl}"
+
+show_onboard() {
+    cat << 'EOF'
+# broker — JSONL Message Broker
+
+A lightweight shell-based message broker for AI agents.
+
+## Commands
+
+### onboard
+broker onboard
+
+Display this help message.
+
+### send
+broker send --from <agent> --to <agent> --content <message>
+
+Send a message to another agent.
+
+### read
+broker read <agent>
+broker read <agent> --all
+
+Read messages addressed to an agent.
+Use --all to include acknowledged messages.
+
+### ack
+broker ack <msg_id>...
+
+Acknowledge one or more messages.
+
+## Message Schema
+
+{
+  "id": "msg_<timestamp>_<random>",
+  "from": "agent-name",
+  "to": "agent-name",
+  "content": "message body",
+  "timestamp_sent": "ISO8601",
+  "timestamp_ack": "ISO8601 or null"
+}
+
+## Example Workflow
+
+# Planner sends task to coder
+broker send --from planner --to coder --content "implement login"
+
+# Coder checks for messages
+broker read coder
+
+# Coder acknowledges completed task
+broker ack msg_12345_abc
+
+## Exit Codes
+
+0 - success
+1 - invalid command
+2 - invalid arguments
+3 - storage error
+EOF
+}
+
+generate_id() {
+    local timestamp random
+    timestamp=$(date +%s)
+    random=$(od -An -tx1 -N4 /dev/urandom | tr -d ' \n')
+    echo "msg_${timestamp}_${random}"
+}
+
+get_timestamp() {
+    date -u +"%Y-%m-%dT%H:%M:%SZ"
+}
+
+cmd_send() {
+    local from_arg to_arg content_arg
+    from_arg=
+    to_arg=
+    content_arg=
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --from)
+                from_arg="$2"
+                shift 2
+                ;;
+            --to)
+                to_arg="$2"
+                shift 2
+                ;;
+            --content)
+                content_arg="$2"
+                shift 2
+                ;;
+            *)
+                echo "Error: unknown argument: $1" >&2
+                exit 2
+                ;;
+        esac
+    done
+
+    if [[ -z "$from_arg" ]] || [[ -z "$to_arg" ]] || [[ -z "$content_arg" ]]; then
+        echo "Error: --from, --to, and --content are required" >&2
+        exit 2
+    fi
+
+    local id timestamp
+    id=$(generate_id)
+    timestamp=$(get_timestamp)
+
+    local message
+    message=$(jq -n \
+        --arg id "$id" \
+        --arg from "$from_arg" \
+        --arg to "$to_arg" \
+        --arg content "$content_arg" \
+        --arg timestamp_sent "$timestamp" \
+        '{
+            id: $id,
+            from: $from,
+            to: $to,
+            content: $content,
+            timestamp_sent: $timestamp_sent,
+            timestamp_ack: null
+        }')
+
+    (
+        flock -x 200
+        echo "$message" >> "$MESSAGES_FILE"
+    ) 200>"${MESSAGES_FILE}.lock"
+
+    echo "$message"
+}
+
+cmd_read() {
+    local agent all
+    agent="${1:-}"
+    all=false
+
+    if [[ -z "$agent" ]]; then
+        echo "Error: agent name required" >&2
+        exit 2
+    fi
+
+    shift || true
+
+    if [[ "${1:-}" == "--all" ]]; then
+        all=true
+    fi
+
+    if [[ ! -f "$MESSAGES_FILE" ]]; then
+        exit 0
+    fi
+
+    if [[ "$all" == "true" ]]; then
+        jq --arg to "$agent" 'select(.to == $to)' "$MESSAGES_FILE"
+    else
+        jq --arg to "$agent" 'select(.to == $to and .timestamp_ack == null)' "$MESSAGES_FILE"
+    fi
+}
+
+cmd_ack() {
+    if [[ $# -eq 0 ]]; then
+        echo "Error: message ID required" >&2
+        exit 2
+    fi
+
+    local msg_ids=("$@")
+
+    if [[ ! -f "$MESSAGES_FILE" ]]; then
+        echo "Error: no messages file found" >&2
+        exit 3
+    fi
+
+    local timestamp
+    timestamp=$(get_timestamp)
+
+    local tmpfile
+    tmpfile=$(mktemp)
+
+    local ids_json
+    ids_json=$(printf '%s\n' "${msg_ids[@]}" | jq -R -s -c '. / "\n" | map(select(length > 0))')
+
+    jq --arg timestamp "$timestamp" \
+        --argjson ids "$ids_json" '
+        if (.id | . as $id | $ids | index($id) != null) and (.timestamp_ack == null) then
+            .timestamp_ack = $timestamp
+        else
+            .
+        end
+    ' "$MESSAGES_FILE" > "$tmpfile"
+
+    mv "$tmpfile" "$MESSAGES_FILE"
+}
+
+cmd_help() {
+    echo "Usage: broker <command> [options]"
+    echo ""
+    echo "Commands:"
+    echo "  onboard              Show usage instructions"
+    echo "  send --from <agent> --to <agent> --content <msg>  Send a message"
+    echo "  read <agent> [--all]  Read messages for an agent"
+    echo "  ack <msg_id>...      Acknowledge messages"
+    echo ""
+    echo "Environment:"
+    echo "  MESSAGES_FILE        Path to messages file (default: messages.jsonl)"
+    exit 1
+}
+
+main() {
+    local cmd
+    cmd="${1:-}"
+
+    case "$cmd" in
+        onboard)
+            show_onboard
+            ;;
+        send)
+            shift
+            cmd_send "$@"
+            ;;
+        read)
+            shift
+            cmd_read "$@"
+            ;;
+        ack)
+            shift
+            cmd_ack "$@"
+            ;;
+        help|--help|-h)
+            cmd_help
+            ;;
+        "")
+            cmd_help
+            ;;
+        *)
+            echo "Error: unknown command: $cmd" >&2
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"

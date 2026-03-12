@@ -53,7 +53,7 @@ Instructions:
 - Use Git to version control any updated documentation.
 - Output your findings clearly, organized by category (functional, non-functional, security, performance).
 - Highlight any clarifications or assumptions made.
-- Send at least one MESSAGE to another agent to continue the workflow.
+- Use the broker to communicate with other agents.
 
 AVAILABLE AGENTS:
 | Agent               | Description                                      |
@@ -68,17 +68,16 @@ AVAILABLE AGENTS:
 | Git Maintainer      | Ensures clean repository and marks progress     |
 | Documentation       | Creates user and technical documentation        |
 
-INTER-AGENT MESSAGING:
-- Create lines for sending messages (MESSAGE:) and for acknowledging messages (MARK_READ:) in your output
-- Send messages: MESSAGE: [Requirements Analyst]→[TargetAgent]: <content>
-- Receive messages: you will find them as part of your input
-- Acknowledge: Mark read messages as closed with MARK_READ: <id>
+INTER-AGENT MESSAGING (use broker commands directly):
+- Broker script path: $BROKER_PATH (see context above - absolute path)
+- Read your messages: $BROKER_PATH read "Requirements Analyst"
+- Send messages: $BROKER_PATH send --from "Requirements Analyst" --to "TargetAgent" --content "your message"
+- Acknowledge messages: $BROKER_PATH ack msg_<id> (after processing each message)
 - Use messaging for:
   - Clarification requests to upstream agents
   - Handoff notifications to downstream agents
-  - Team-wide announcements (use →[All])
 
-MESSAGING REQUIREMENT: You MUST send at least one MESSAGE to another agent role.
+MESSAGING REQUIREMENT: You MUST read your messages with broker, process them, acknowledge with broker ack, and send at least one message to another agent role.
 """
 
 class ArchitectDesigner(Agent):
@@ -101,6 +100,7 @@ Instructions:
 - Provide clear system architecture overview and technology stack rationale.
 - Break down design into implementable components with clear interfaces.
 - Log completion when ready.
+- Use the broker to communicate with other agents.
 
 AVAILABLE AGENTS:
 | Agent               | Description                                      |
@@ -115,17 +115,16 @@ AVAILABLE AGENTS:
 | Git Maintainer      | Ensures clean repository and marks progress     |
 | Documentation       | Creates user and technical documentation        |
 
-INTER-AGENT MESSAGING:
-- Create lines for sending messages (MESSAGE:) and for acknowledging messages (MARK_READ:) in your output
-- Send messages: MESSAGE: [Architect/Designer]→[TargetAgent]: <content>
-- Receive messages: you will find them as part of your input
-- Acknowledge: Mark read messages as closed with MARK_READ: <id>
+INTER-AGENT MESSAGING (use broker commands directly):
+- Broker script path: $BROKER_PATH (see context above - absolute path)
+- Read your messages: $BROKER_PATH read "Architect/Designer"
+- Send messages: $BROKER_PATH send --from "Architect/Designer" --to "TargetAgent" --content "your message"
+- Acknowledge messages: $BROKER_PATH ack msg_<id> (after processing each message)
 - Use messaging for:
   - Clarification requests to upstream agents
   - Handoff notifications to downstream agents
-  - Team-wide announcements (use →[All])
 
-MESSAGING REQUIREMENT: You MUST send at least one MESSAGE to another agent role.
+MESSAGING REQUIREMENT: You MUST read your messages with broker, process them, acknowledge with broker ack, and send at least one message to another agent role.
 """
 
 class Developer(Agent):
@@ -148,6 +147,7 @@ Instructions:
 - List all modules/features completed.
 - Report any blockers or design issues via messages.
 - Log completion when ready.
+- Use the broker to communicate with other agents.
 
 AVAILABLE AGENTS:
 | Agent               | Description                                      |
@@ -162,17 +162,16 @@ AVAILABLE AGENTS:
 | Git Maintainer      | Ensures clean repository and marks progress     |
 | Documentation       | Creates user and technical documentation        |
 
-INTER-AGENT MESSAGING:
-- Create lines for sending messages (MESSAGE:) and for acknowledging messages (MARK_READ:) in your output
-- Send messages: MESSAGE: [Developer]→[TargetAgent]: <content>
-- Receive messages: you will find them as part of your input
-- Acknowledge: Mark read messages as closed with MARK_READ: <id>
+INTER-AGENT MESSAGING (use broker commands directly):
+- Broker script path: $BROKER_PATH (see context above - absolute path)
+- Read your messages: $BROKER_PATH read "Developer"
+- Send messages: $BROKER_PATH send --from "Developer" --to "TargetAgent" --content "your message"
+- Acknowledge messages: $BROKER_PATH ack msg_<id> (after processing each message)
 - Use messaging for:
   - Clarification requests to upstream agents
   - Handoff notifications to downstream agents
-  - Team-wide announcements (use →[All])
 
-MESSAGING REQUIREMENT: You MUST send at least one MESSAGE to another agent role.
+MESSAGING REQUIREMENT: You MUST read your messages with broker, process them, acknowledge with broker ack, and send at least one message to another agent role.
 """
 
 class Tester(Agent):
@@ -194,6 +193,7 @@ Instructions:
 - Use Git to version control tests.
 - Provide comprehensive test report (unit test results, integration tests, functional tests).
 - List all bugs found, categorized by severity (critical, major, minor).
+- Use the broker to communicate with other agents.
 
 AVAILABLE AGENTS:
 | Agent               | Description                                      |
@@ -208,17 +208,16 @@ AVAILABLE AGENTS:
 | Git Maintainer      | Ensures clean repository and marks progress     |
 | Documentation       | Creates user and technical documentation        |
 
-INTER-AGENT MESSAGING:
-- Create lines for sending messages (MESSAGE:) and for acknowledging messages (MARK_READ:) in your output
-- Send messages: MESSAGE: [Tester]→[TargetAgent]: <content>
-- Receive messages: you will find them as part of your input
-- Acknowledge: Mark read messages as closed with MARK_READ: <id>
+INTER-AGENT MESSAGING (use broker commands directly):
+- Broker script path: $BROKER_PATH (see context above - absolute path)
+- Read your messages: $BROKER_PATH read "Tester"
+- Send messages: $BROKER_PATH send --from "Tester" --to "TargetAgent" --content "your message"
+- Acknowledge messages: $BROKER_PATH ack msg_<id> (after processing each message)
 - Use messaging for:
   - Clarification requests to upstream agents
   - Handoff notifications to downstream agents
-  - Team-wide announcements (use →[All])
 
-MESSAGING REQUIREMENT: You MUST send at least one MESSAGE to another agent role.
+MESSAGING REQUIREMENT: You MUST read your messages with broker, process them, acknowledge with broker ack, and send at least one message to another agent role.
 """
 
 class Deployer(Agent):
@@ -242,6 +241,7 @@ Instructions:
 - Tag release after successful deployment: 'git tag -a v[version] -m "Release [version]"'.
 - Document deployment process and any issues encountered.
 - Provide deployment checklist and verification steps.
+- Use the broker to communicate with other agents.
 
 AVAILABLE AGENTS:
 | Agent               | Description                                      |
@@ -256,17 +256,16 @@ AVAILABLE AGENTS:
 | Git Maintainer      | Ensures clean repository and marks progress     |
 | Documentation       | Creates user and technical documentation        |
 
-INTER-AGENT MESSAGING:
-- Create lines for sending messages (MESSAGE:) and for acknowledging messages (MARK_READ:) in your output
-- Send messages: MESSAGE: [Deployer]→[TargetAgent]: <content>
-- Receive messages: you will find them as part of your input
-- Acknowledge: Mark read messages as closed with MARK_READ: <id>
+INTER-AGENT MESSAGING (use broker commands directly):
+- Broker script path: $BROKER_PATH (see context above - absolute path)
+- Read your messages: $BROKER_PATH read "Deployer"
+- Send messages: $BROKER_PATH send --from "Deployer" --to "TargetAgent" --content "your message"
+- Acknowledge messages: $BROKER_PATH ack msg_<id> (after processing each message)
 - Use messaging for:
   - Clarification requests to upstream agents
   - Handoff notifications to downstream agents
-  - Team-wide announcements (use →[All])
 
-MESSAGING REQUIREMENT: You MUST send at least one MESSAGE to another agent role.
+MESSAGING REQUIREMENT: You MUST read your messages with broker, process them, acknowledge with broker ack, and send at least one message to another agent role.
 """
 
 class MaintainerReviewer(Agent):
@@ -287,6 +286,7 @@ Instructions:
 - Use Git to handle code reviews and hotfixes.
 - After review approval, merge: 'git checkout main && git merge [branch-name]'.
 - Provide maintenance status report (issues resolved, improvements identified, code quality metrics).
+- Use the broker to communicate with other agents.
 
 AVAILABLE AGENTS:
 | Agent               | Description                                      |
@@ -301,17 +301,16 @@ AVAILABLE AGENTS:
 | Git Maintainer      | Ensures clean repository and marks progress     |
 | Documentation       | Creates user and technical documentation        |
 
-INTER-AGENT MESSAGING:
-- Create lines for sending messages (MESSAGE:) and for acknowledging messages (MARK_READ:) in your output
-- Send messages: MESSAGE: [Maintainer/Reviewer]→[TargetAgent]: <content>
-- Receive messages: you will find them as part of your input
-- Acknowledge: Mark read messages as closed with MARK_READ: <id>
+INTER-AGENT MESSAGING (use broker commands directly):
+- Broker script path: $BROKER_PATH (see context above - absolute path)
+- Read your messages: $BROKER_PATH read "Maintainer/Reviewer"
+- Send messages: $BROKER_PATH send --from "Maintainer/Reviewer" --to "TargetAgent" --content "your message"
+- Acknowledge messages: $BROKER_PATH ack msg_<id> (after processing each message)
 - Use messaging for:
   - Clarification requests to upstream agents
   - Handoff notifications to downstream agents
-  - Team-wide announcements (use →[All])
 
-MESSAGING REQUIREMENT: You MUST send at least one MESSAGE to another agent role.
+MESSAGING REQUIREMENT: You MUST read your messages with broker, process them, acknowledge with broker ack, and send at least one message to another agent role.
 """
 
 class Refiner(Agent):
@@ -332,6 +331,7 @@ Instructions:
 - Use Git to document findings.
 - Provide comprehensive project health report (code quality metrics, test coverage, performance).
 - List identified improvements prioritized by impact.
+- Use the broker to communicate with other agents.
 
 AVAILABLE AGENTS:
 | Agent               | Description                                      |
@@ -346,17 +346,16 @@ AVAILABLE AGENTS:
 | Git Maintainer      | Ensures clean repository and marks progress     |
 | Documentation       | Creates user and technical documentation        |
 
-INTER-AGENT MESSAGING:
-- Create lines for sending messages (MESSAGE:) and for acknowledging messages (MARK_READ:) in your output
-- Send messages: MESSAGE: [Refiner]→[TargetAgent]: <content>
-- Receive messages: you will find them as part of your input
-- Acknowledge: Mark read messages as closed with MARK_READ: <id>
+INTER-AGENT MESSAGING (use broker commands directly):
+- Broker script path: $BROKER_PATH (see context above - absolute path)
+- Read your messages: $BROKER_PATH read "Refiner"
+- Send messages: $BROKER_PATH send --from "Refiner" --to "TargetAgent" --content "your message"
+- Acknowledge messages: $BROKER_PATH ack msg_<id> (after processing each message)
 - Use messaging for:
   - Clarification requests to upstream agents
   - Handoff notifications to downstream agents
-  - Team-wide announcements (use →[All])
 
-MESSAGING REQUIREMENT: You MUST send at least one MESSAGE to another agent role.
+MESSAGING REQUIREMENT: You MUST read your messages with broker, process them, acknowledge with broker ack, and send at least one message to another agent role.
 """
 
 class GitMaintainer(Agent):
@@ -378,6 +377,7 @@ Instructions:
 - Report current branch and repository state.
 - List any uncommitted changes or issues found.
 - If uncommitted changes exist, DO NOT commit automatically; send messages for decision.
+- Use the broker to communicate with other agents.
 
 AVAILABLE AGENTS:
 | Agent               | Description                                      |
@@ -392,17 +392,16 @@ AVAILABLE AGENTS:
 | Git Maintainer      | Ensures clean repository and marks progress     |
 | Documentation       | Creates user and technical documentation        |
 
-INTER-AGENT MESSAGING:
-- Create lines for sending messages (MESSAGE:) and for acknowledging messages (MARK_READ:) in your output
-- Send messages: MESSAGE: [Git Maintainer]→[TargetAgent]: <content>
-- Receive messages: you will find them as part of your input
-- Acknowledge: Mark read messages as closed with MARK_READ: <id>
+INTER-AGENT MESSAGING (use broker commands directly):
+- Broker script path: $BROKER_PATH (see context above - absolute path)
+- Read your messages: $BROKER_PATH read "Git Maintainer"
+- Send messages: $BROKER_PATH send --from "Git Maintainer" --to "TargetAgent" --content "your message"
+- Acknowledge messages: $BROKER_PATH ack msg_<id> (after processing each message)
 - Use messaging for:
   - Clarification requests to upstream agents
   - Handoff notifications to downstream agents
-  - Team-wide announcements (use →[All])
 
-MESSAGING REQUIREMENT: You MUST send at least one MESSAGE to another agent role.
+MESSAGING REQUIREMENT: You MUST read your messages with broker, process them, acknowledge with broker ack, and send at least one message to another agent role.
 """
 
 class DocumentationSpecialist(Agent):
@@ -423,10 +422,11 @@ Your responsibilities:
 Instructions:
 - Use Git to version control all documentation.
 - Create documentation incrementally as features are developed, not all at the end.
-- Ensure API documentation matches actual implementation; flag discrepancies via beads.
+- Ensure API documentation matches actual implementation; flag discrepancies via broker messages.
 - Request code comments from developers if code documentation is insufficient.
 - Prioritize documentation for critical features and operational procedures.
 - Log suggestion regarding areas for future documentation improvements.
+- Use the broker to communicate with other agents.
 
 AVAILABLE AGENTS:
 | Agent               | Description                                      |
@@ -441,17 +441,16 @@ AVAILABLE AGENTS:
 | Git Maintainer      | Ensures clean repository and marks progress     |
 | Documentation       | Creates user and technical documentation        |
 
-INTER-AGENT MESSAGING:
-- Create lines for sending messages (MESSAGE:) and for acknowledging messages (MARK_READ:) in your output
-- Send messages: MESSAGE: [Documentation Specialist]→[TargetAgent]: <content>
-- Receive messages: you will find them as part of your input
-- Acknowledge: Mark read messages as closed with MARK_READ: <id>
+INTER-AGENT MESSAGING (use broker commands directly):
+- Broker script path: $BROKER_PATH (see context above - absolute path)
+- Read your messages: $BROKER_PATH read "Documentation Specialist"
+- Send messages: $BROKER_PATH send --from "Documentation Specialist" --to "TargetAgent" --content "your message"
+- Acknowledge messages: $BROKER_PATH ack msg_<id> (after processing each message)
 - Use messaging for:
   - Clarification requests to upstream agents
   - Handoff notifications to downstream agents
-  - Team-wide announcements (use →[All])
 
-MESSAGING REQUIREMENT: You MUST send at least one MESSAGE to another agent role.
+MESSAGING REQUIREMENT: You MUST read your messages with broker, process them, acknowledge with broker ack, and send at least one message to another agent role.
 """
 
 class AgentRegistry:

@@ -1,9 +1,14 @@
 # Message-Driven Multi-Agent Software Development Lifecycle (SDLC) System
 
 ## Overview
-This document describes a complete multi-agent system designed to manage the full cycle of software development. Each agent has a specialized role, and they collaborate through **inter-agent messages** tracked in a shared task management system (**beads**) and version control (**Git**). 
+This document describes a complete multi-agent system designed to manage the full cycle of software development. Each agent has a specialized role, and they collaborate through **inter-agent messages** managed by a **JSONL-based message broker** and version control (**Git**).
 
-**Key Architecture Change**: There is no central Orchestrator. Instead, agents are activated based on **message demand**—whichever agent has the most pending messages gets selected next. This creates a pull-based, decentralized workflow.
+**Key Architecture**: There is no central Orchestrator controlling message flow. Instead:
+- Agents are activated based on **message demand**—whichever agent has the most pending messages gets selected next
+- Agents communicate **directly via the broker script** (`tools/broker`)
+- The orchestrator only creates bootstrap messages and selects which agent to activate
+
+This creates a pull-based, decentralized workflow.
 
 ---
 
@@ -11,8 +16,8 @@ This document describes a complete multi-agent system designed to manage the ful
 
 ### How It Works
 
-1. **Bootstrap**: At system startup, one initial message is created for each agent role.
-2. **Selection**: The system counts pending (unclosed) messages per agent and selects the one with the most.
+1. **Bootstrap**: At system startup, one initial message is created for each agent role using `broker send`.
+2. **Selection**: The system counts pending (unacknowledged) messages per agent and selects the one with the most.
 3. **Tie-Breaking**: If multiple agents have the same count, use SDLC role order:
    1. Requirements Analyst
    2. Architect/Designer
@@ -23,37 +28,53 @@ This document describes a complete multi-agent system designed to manage the ful
    7. Refiner
    8. Git Maintainer
    9. Documentation Specialist
-4. **Activation**: Selected agent receives messages in context, processes them, and outputs responses.
-5. **Message Parsing**: System parses agent output for:
-   - `MESSAGE: [Agent]→[Target]: content` - registers new messages
-   - `MARK_READ: beads-XXX` - closes processed messages
+4. **Activation**: Selected agent receives context (including `$BROKER_PATH`), processes messages, and calls broker directly.
+5. **Agent Actions**: Agents call broker commands directly:
+   - `broker read` - to read their pending messages
+   - `broker send` - to send messages to other agents
+   - `broker ack` - to acknowledge processed messages
 6. **Termination**: System stops when no pending messages remain or max iterations reached.
 
-### Message Format
+### Broker Commands
 
-**Sending Messages (in agent output):**
-```
-MESSAGE: [YourAgentName]→[TargetAgent]: <content>
-```
-
-**Marking Messages as Read (in agent output):**
-```
-MARK_READ: beads-123, beads-124, beads-125
+**Read Messages:**
+```bash
+$BROKER_PATH read "Agent Name"
+$BROKER_PATH read "Agent Name" --all   # Include acknowledged messages
 ```
 
-**Message Display in Agent Context:**
+**Send Messages:**
+```bash
+$BROKER_PATH send --from "SenderAgent" --to "TargetAgent" --content "message content"
 ```
-[beads-123] MESSAGE: [Architect/Designer]→[Developer]: API specs in docs/api.md.
-[beads-124] MESSAGE: [Requirements Analyst]→[Developer]: Priority features in specs.md section 3.
+
+**Acknowledge Messages:**
+```bash
+$BROKER_PATH ack msg_1234567890_a1b2c3d4
+$BROKER_PATH ack msg_id1 msg_id2 msg_id3   # Multiple at once
+```
+
+### Message Schema
+
+Messages are stored as JSONL (JSON Lines) with this schema:
+```json
+{
+  "id": "msg_<timestamp>_<random>",
+  "from": "agent-name",
+  "to": "agent-name",
+  "content": "message body",
+  "timestamp_sent": "ISO8601",
+  "timestamp_ack": "ISO8601 or null"
+}
 ```
 
 ### Agent Messaging Requirements
 
 Every agent **MUST**:
-1. Review all messages addressed to them in their context
+1. Call `broker read` to retrieve messages addressed to them
 2. Act on the information/requests in those messages
-3. Mark ALL processed messages as read using `MARK_READ: beads-<id>`
-4. Send **at least one** `MESSAGE:` to another agent role
+3. Call `broker ack` to acknowledge ALL processed messages
+4. Call `broker send` to send **at least one** message to another agent role
 
 ---
 
@@ -62,7 +83,7 @@ Every agent **MUST**:
 Each agent prompt includes:
 - Role purpose and responsibilities
 - Available agents table (for messaging decisions)
-- Inter-agent messaging instructions
+- Broker command instructions
 
 ### 1. Requirements Analyst
 
@@ -74,7 +95,7 @@ Each agent prompt includes:
 - Detect ambiguities, gaps, or conflicts
 - Propose additional requirements for robustness
 
-**Messaging:** Send messages to Architect/Designer (handoff), Documentation Specialist (document requirements), or other agents as needed.
+**Messaging:** Use broker to send messages to Architect/Designer (handoff), Documentation Specialist (document requirements), or other agents as needed.
 
 ---
 
@@ -88,7 +109,7 @@ Each agent prompt includes:
 - Define API contracts and component diagrams
 - Identify technology stack with justification
 
-**Messaging:** Send messages to Developer (implementation tasks), Requirements Analyst (clarifications), or Documentation Specialist (architecture docs).
+**Messaging:** Use broker to send messages to Developer (implementation tasks), Requirements Analyst (clarifications), or Documentation Specialist (architecture docs).
 
 ---
 
@@ -102,7 +123,7 @@ Each agent prompt includes:
 - Write clean, maintainable code with unit tests
 - Report blockers or design issues
 
-**Messaging:** Send messages to Tester (ready for testing), Architect/Designer (design clarifications), or other Developers (collaboration).
+**Messaging:** Use broker to send messages to Tester (ready for testing), Architect/Designer (design clarifications), or other Developers (collaboration).
 
 ---
 
@@ -116,7 +137,7 @@ Each agent prompt includes:
 - Test edge cases and non-functional requirements
 - Document bugs and issues found
 
-**Messaging:** Send messages to Developer (bug reports), Deployer (ready for deployment), or Requirements Analyst (requirement clarifications).
+**Messaging:** Use broker to send messages to Developer (bug reports), Deployer (ready for deployment), or Requirements Analyst (requirement clarifications).
 
 ---
 
@@ -130,7 +151,7 @@ Each agent prompt includes:
 - Execute deployment with pre-checks
 - Tag releases after successful deployment
 
-**Messaging:** Send messages to Maintainer/Reviewer (handoff), Tester (deployment verification), or Documentation Specialist (deployment docs).
+**Messaging:** Use broker to send messages to Maintainer/Reviewer (handoff), Tester (deployment verification), or Documentation Specialist (deployment docs).
 
 ---
 
@@ -144,7 +165,7 @@ Each agent prompt includes:
 - Perform hot-fixes for critical issues
 - Conduct code reviews and merge approved PRs
 
-**Messaging:** Send messages to Developer (fixes needed), Refiner (improvement proposals), or Requirements Analyst (feature requests).
+**Messaging:** Use broker to send messages to Developer (fixes needed), Refiner (improvement proposals), or Requirements Analyst (feature requests).
 
 ---
 
@@ -158,7 +179,7 @@ Each agent prompt includes:
 - Develop operational documentation and runbooks
 - Ensure docs stay up-to-date with implementation
 
-**Messaging:** Send messages to any agent for clarifications, or to all agents (→[All]) for documentation requests.
+**Messaging:** Use broker to send messages to any agent for clarifications.
 
 ---
 
@@ -172,7 +193,7 @@ Each agent prompt includes:
 - Propose iterative improvements and refactoring
 - Prioritize improvements by impact and effort
 
-**Messaging:** Send messages to Architect/Designer (architecture improvements), Developer (refactoring tasks), or Maintainer/Reviewer (priority decisions).
+**Messaging:** Use broker to send messages to Architect/Designer (architecture improvements), Developer (refactoring tasks), or Maintainer/Reviewer (priority decisions).
 
 ---
 
@@ -186,7 +207,7 @@ Each agent prompt includes:
 - Create iteration tags to mark progress
 - Report uncommitted changes or issues
 
-**Messaging:** Send messages to any agent about uncommitted changes, or to all agents (→[All]) for repository status updates.
+**Messaging:** Use broker to send messages to any agent about uncommitted changes.
 
 ---
 
@@ -196,7 +217,7 @@ Each agent prompt includes:
 ┌─────────────────────────────────────────────────────────────┐
 │  SYSTEM START                                                │
 │  ↓                                                           │
-│  Create bootstrap message to each agent                     │
+│  Create bootstrap messages via broker send                  │
 │  ↓                                                           │
 │  ┌─────────────────────────────────────────────────────┐   │
 │  │  MESSAGE-DRIVEN LOOP                                 │   │
@@ -206,11 +227,13 @@ Each agent prompt includes:
 │  │  Select agent with most messages                    │   │
 │  │  (tie-break by role order)                          │   │
 │  │  ↓                                                   │   │
-│  │  Activate agent with messages in context            │   │
+│  │  Activate agent with context (includes              │   │
+│  │  $BROKER_PATH absolute path)                        │   │
 │  │  ↓                                                   │   │
-│  │  Parse agent output:                                │   │
-│  │  - MESSAGE: → register new messages                 │   │
-│  │  - MARK_READ: → close processed messages            │   │
+│  │  Agent calls broker directly:                       │   │
+│  │  - broker read (get messages)                       │   │
+│  │  - broker send (send messages)                      │   │
+│  │  - broker ack (acknowledge processed)               │   │
 │  │  ↓                                                   │   │
 │  │  Commit changes, tag iteration                      │   │
 │  │  ↓                                                   │   │
@@ -225,16 +248,22 @@ Each agent prompt includes:
 
 ## Tool Usage
 
-### Beads Commands
-- `bd list` - List all tasks/messages
-- `bd ready` - Show tasks ready for work
-- `bd show <id>` - Get details for specific task
-- `bd prime` - Register project context for agents
+### Broker Commands
+- `broker send --from <agent> --to <agent> --content <msg>` - Send a message
+- `broker read <agent>` - Read pending messages for an agent
+- `broker read <agent> --all` - Read all messages (including acknowledged)
+- `broker ack <msg_id>...` - Acknowledge one or more messages
+- `broker onboard` - Show usage instructions
 
 ### Git Commands
 - `git status` - Check repository state
 - `git add/commit/push` - Version control
 - `git tag` - Mark iterations
+
+### Message Storage
+- Messages stored in `messages.jsonl` (JSONL format)
+- File location configurable via `MESSAGES_FILE` environment variable
+- Uses flock for concurrent access safety
 
 ---
 
@@ -254,11 +283,16 @@ Each agent prompt includes:
 **Key Principles:**
 - **No Orchestrator**: Decentralized, message-driven activation
 - **Pull-Based**: Agents activated by message demand
-- **Mandatory Messaging**: Every agent must send at least one message
-- **Explicit Acknowledgment**: Agents mark messages as read with MARK_READ:
+- **Direct Broker Access**: Agents call broker commands directly
+- **Explicit Acknowledgment**: Agents acknowledge messages with `broker ack`
+- **Absolute Paths**: `$BROKER_PATH` in context ensures agents can find broker from any directory
 - **Graceful Termination**: System stops when no messages remain
 
 **Tools:**
-- `bd` (beads): Task tracking and message persistence
+- `broker` (tools/broker): JSONL-based message broker for inter-agent communication
 - `git`: Version control and collaboration
 - AI agents: opencode, gemini, qwen, cline, codex (configured in config.py)
+
+**Configuration:**
+- `required_tools`: ["git", "jq"] (broker is a project script, not a system tool)
+- Broker path computed dynamically from project root
