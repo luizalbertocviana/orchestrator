@@ -2,6 +2,9 @@
 .dolt/
 *.db
 
+# Beads (task tracking)
+.beads/dolt-monitor.pid.lock
+
 # Python
 __pycache__/
 *.pyc
