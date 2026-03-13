@@ -1,10 +1,10 @@
 # Message-Driven Multi-Agent SDLC System
 
-A complete multi-agent system designed to manage the full cycle of software development. Each agent has a specialized role, and they collaborate through **inter-agent messages** managed by a **JSONL-based message broker**. Agents are activated based on message demand—whichever agent has the most pending messages gets selected next.
+A complete multi-agent system designed to manage the full cycle of software development. Each agent has a specialized role, and they collaborate through **inter-agent messages** managed by a **JSONL-based message broker**.
 
 ## Core Components
 
-- **Message-Driven Activation**: Agents are selected dynamically based on pending message count, with tie-breaking by SDLC role order.
+- **Message-Driven Activation**: Agents are selected by SDLC role order.
 - **Agents**: Specialized AI agents (Requirements Analyst, Architect, Developer, Tester, etc.) that perform specific SDLC tasks.
 - **Broker**: A lightweight JSONL-based message broker (`tools/broker`) for inter-agent communication.
 - **Git**: Version control for code and documentation.
@@ -83,7 +83,7 @@ This will start the message-driven SDLC process in your current working director
 1.  **Initialization**: The system verifies prerequisites (Git, broker script, required CLI agents) and ensures a `specs.md` file exists.
 2.  **Bootstrap**: One initial message is created for each agent role using `broker send`.
 3.  **Message-Driven Cycle**:
-    -   System selects the agent with the most pending messages (tie-break by SDLC role order).
+    -   System selects agent with SDLC role order.
     -   The chosen agent receives context (including `$BROKER_PATH`), and calls broker directly:
         -   `broker read` - reads pending messages
         -   `broker send` - sends messages to other agents
@@ -142,9 +142,8 @@ Agents receive `$BROKER_PATH` in their context—an absolute path to the broker 
 
 ## Agent Selection Algorithm
 
-1. Count pending (unacknowledged) messages per target agent
-2. Select agent with highest count
-3. If tie, use SDLC role order:
+1. First agent with pending (unacknowledged) messages
+2. Use SDLC role order:
    1. Requirements Analyst
    2. Architect/Designer
    3. Developer
@@ -177,9 +176,7 @@ PYTHONPATH=src uv run pytest --cov=src/orchestrator --cov-report=term-missing
 
 ### Key Design Decisions
 
-- **No MESSAGE:/MARK_READ: parsing**: Agents call broker directly, no output parsing needed
 - **Absolute broker path**: `$BROKER_PATH` in context ensures agents work from any directory
-- **Simplified orchestrator**: Only creates bootstrap messages and selects agents
 - **Agent autonomy**: Each agent responsible for its own message handling
 
 ---
