@@ -50,10 +50,14 @@ def run(
     if not orchestration_service.initialize_beads():
         return
 
-    # Bootstrap: create initial message to each agent
-    print_info("Creating bootstrap messages...")
-    orchestration_service.create_bootstrap_messages()
-    print_success("Bootstrap messages created")
+    # Bootstrap: create initial messages only if no pending messages exist
+    print_info("Checking for pending messages...")
+    if orchestration_service.count_pending_messages() == 0:
+        print_info("No pending messages found. Creating bootstrap messages...")
+        orchestration_service.create_bootstrap_messages()
+        print_success("Bootstrap messages created")
+    else:
+        print_info("Found existing pending messages. Skipping bootstrap.")
 
     print_success("All prerequisites verified")
 

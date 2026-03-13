@@ -287,35 +287,35 @@ class TestBrokerWrapperCountPending:
 
 class TestBrokerWrapperGetAllPending:
     """Tests for get_all_pending method."""
-    
+
     def test_get_all_pending_empty_file(self, temp_messages_file):
         """Test getting pending messages from empty file."""
         broker = BrokerWrapper(messages_file=temp_messages_file)
-        
+
         messages = broker.get_all_pending()
-        
+
         assert messages == []
-    
+
     def test_get_all_pending_with_messages(self, temp_messages_file):
-        """Test getting pending messages."""
+        """Test getting pending messages (pretty-printed JSON format)."""
         broker = BrokerWrapper(messages_file=temp_messages_file)
-        
-        # Write test messages
+
+        # Write test messages in broker's pretty-printed format (multi-line)
         msg1 = {"id": "1", "to": "a", "timestamp_ack": None}
         msg2 = {"id": "2", "to": "b", "timestamp_ack": None}
         msg3 = {"id": "3", "to": "a", "timestamp_ack": "2024-01-01"}  # acknowledged
-        
+
         with open(temp_messages_file, 'w') as f:
-            f.write(json.dumps(msg1) + "\n")
-            f.write(json.dumps(msg2) + "\n")
-            f.write(json.dumps(msg3) + "\n")
-        
+            f.write(json.dumps(msg1, indent=2) + "\n")
+            f.write(json.dumps(msg2, indent=2) + "\n")
+            f.write(json.dumps(msg3, indent=2) + "\n")
+
         messages = broker.get_all_pending()
-        
+
         assert len(messages) == 2
         assert messages[0]["id"] == "1"
         assert messages[1]["id"] == "2"
-    
+
     def test_get_all_pending_nonexistent_file(self):
         """Test getting pending messages when file doesn't exist."""
         broker = BrokerWrapper(messages_file="/nonexistent/path.jsonl")
@@ -324,22 +324,45 @@ class TestBrokerWrapperGetAllPending:
 
         assert messages == []
 
-    def test_get_all_pending_invalid_json(self, temp_messages_file):
-        """Test getting pending messages with invalid JSON lines."""
+    def test_get_all_pending_pretty_printed(self, temp_messages_file):
+        """Test parsing broker's actual pretty-printed output format."""
         broker = BrokerWrapper(messages_file=temp_messages_file)
 
-        # Write mix of valid and invalid JSON
+        # Simulate actual broker output (pretty-printed, multi-line per message)
+        content = """{
+  "id": "msg_001",
+  "from": "agent_a",
+  "to": "agent_b",
+  "content": "hello",
+  "timestamp_sent": "2024-01-01T00:00:00Z",
+  "timestamp_ack": null
+}
+{
+  "id": "msg_002",
+  "from": "agent_c",
+  "to": "agent_b",
+  "content": "world",
+  "timestamp_sent": "2024-01-01T00:00:01Z",
+  "timestamp_ack": null
+}
+{
+  "id": "msg_003",
+  "from": "agent_b",
+  "to": "agent_d",
+  "content": "test",
+  "timestamp_sent": "2024-01-01T00:00:02Z",
+  "timestamp_ack": "2024-01-01T00:00:03Z"
+}
+"""
         with open(temp_messages_file, 'w') as f:
-            f.write('invalid json\n')
-            f.write('{"id": "1", "to": "a", "timestamp_ack": null}\n')
-            f.write('another bad line\n')
-            f.write('{"id": "2", "to": "b", "timestamp_ack": "2024-01-01"}\n')  # acked
+            f.write(content)
 
         messages = broker.get_all_pending()
 
-        # Should skip invalid lines and only return unacknowledged
-        assert len(messages) == 1
-        assert messages[0]["id"] == "1"
+        # Should return only unacknowledged messages
+        assert len(messages) == 2
+        assert messages[0]["id"] == "msg_001"
+        assert messages[1]["id"] == "msg_002"
 
     @patch('builtins.open')
     def test_get_all_pending_io_error(self, mock_open, broker):
@@ -350,6 +373,90 @@ class TestBrokerWrapperGetAllPending:
 
         # Should return empty list on error
         assert messages == []
+
+
+class TestBrokerWrapperParseJsonObjects:
+    """Tests for _parse_json_objects helper method."""
+
+    def test_parse_json_objects_empty(self, broker):
+        """Test parsing empty content."""
+        result = broker._parse_json_objects("")
+        assert result == []
+
+    def test_parse_json_objects_single(self, broker):
+        """Test parsing a single JSON object."""
+        content = '{"id": "1", "name": "test"}'
+        result = broker._parse_json_objects(content)
+        assert len(result) == 1
+        assert result[0]["id"] == "1"
+
+    def test_parse_json_objects_multiple(self, broker):
+        """Test parsing multiple JSON objects."""
+        content = '{"id": "1"}\n{"id": "2"}\n{"id": "3"}'
+        result = broker._parse_json_objects(content)
+        assert len(result) == 3
+        assert result[0]["id"] == "1"
+        assert result[1]["id"] == "2"
+        assert result[2]["id"] == "3"
+
+    def test_parse_json_objects_pretty_printed(self, broker):
+        """Test parsing pretty-printed JSON objects (multi-line)."""
+        content = """{
+  "id": "1",
+  "name": "first"
+}
+{
+  "id": "2",
+  "name": "second"
+}
+"""
+        result = broker._parse_json_objects(content)
+        assert len(result) == 2
+        assert result[0]["id"] == "1"
+        assert result[1]["id"] == "2"
+
+    def test_parse_json_objects_nested(self, broker):
+        """Test parsing objects with nested structures."""
+        content = """{
+  "id": "1",
+  "data": {"nested": "value1"}
+}
+{
+  "id": "2",
+  "data": {"nested": "value2"}
+}
+"""
+        result = broker._parse_json_objects(content)
+        assert len(result) == 2
+        assert result[0]["data"]["nested"] == "value1"
+        assert result[1]["data"]["nested"] == "value2"
+
+    def test_parse_json_objects_invalid_skipped(self, broker):
+        """Test that invalid JSON is skipped."""
+        content = """{
+  "id": "1",
+  "valid": true
+}
+invalid json here
+{
+  "id": "2",
+  "valid": true
+}
+"""
+        result = broker._parse_json_objects(content)
+        assert len(result) == 2
+        assert result[0]["id"] == "1"
+        assert result[1]["id"] == "2"
+
+    def test_parse_json_objects_malformed_skipped(self, broker):
+        """Test that malformed objects are skipped."""
+        # Extra closing brace - first object closes early, extra } is ignored
+        content = '{"id": "1"}}\n{"id": "2"}'
+        result = broker._parse_json_objects(content)
+        # Both objects should parse - the extra } is treated as noise
+        assert len(result) == 2
+        assert result[0]["id"] == "1"
+        assert result[1]["id"] == "2"
 
 
 class TestBrokerWrapperCountByAgent:

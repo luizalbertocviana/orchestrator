@@ -87,6 +87,36 @@ def test_prerequisites_fail(mock_service):
 
 
 @patch('orchestrator.main.orchestration_service')
+def test_bootstrap_skipped_when_messages_exist(mock_service):
+    """Test that bootstrap messages are skipped when pending messages exist."""
+    mock_service.verify_tools.return_value = True
+    mock_service.verify_git_repo.return_value = True
+    mock_service.initialize_beads.return_value = True
+    mock_service.count_pending_messages.return_value = 5  # Messages exist
+    mock_service.select_agent_by_messages.return_value = None  # No agent selected
+
+    run(max_iterations=1)
+
+    # Bootstrap should be skipped
+    mock_service.create_bootstrap_messages.assert_not_called()
+
+
+@patch('orchestrator.main.orchestration_service')
+def test_bootstrap_created_when_no_messages(mock_service):
+    """Test that bootstrap messages are created when no pending messages."""
+    mock_service.verify_tools.return_value = True
+    mock_service.verify_git_repo.return_value = True
+    mock_service.initialize_beads.return_value = True
+    mock_service.count_pending_messages.return_value = 0  # No messages
+    mock_service.select_agent_by_messages.return_value = None  # No agent selected
+
+    run(max_iterations=1)
+
+    # Bootstrap should be created
+    mock_service.create_bootstrap_messages.assert_called_once()
+
+
+@patch('orchestrator.main.orchestration_service')
 @patch('time.sleep', return_value=None)
 @patch('subprocess.run')
 def test_run_agent_fails(mock_sub, mock_sleep, mock_service):

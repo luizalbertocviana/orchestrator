@@ -57,15 +57,25 @@ class BrokerWrapper:
         self._env = os.environ.copy()
         if self.messages_file:
             self._env["MESSAGES_FILE"] = self.messages_file
-    
+
     def _find_project_root(self) -> Path:
-        """Find the project root by looking for .git directory."""
-        current = Path.cwd()
+        """Find the orchestrator project root by looking for .git directory.
+
+        This method starts from the orchestrator's own directory (where this script resides)
+        and walks up the directory tree to find the .git directory, ensuring it always
+        returns the orchestrator project root regardless of the current working directory.
+
+        Returns:
+            Path to the orchestrator project root
+        """
+        # Start from the directory where this module is located
+        current = Path(__file__).resolve().parent
         for parent in [current] + list(current.parents):
             if (parent / ".git").exists():
                 return parent
-        return current
-    
+        # Fallback to current working directory if .git not found
+        return Path.cwd()
+
     def _run_command(self, args: List[str]) -> str:
         """Run a broker command and return stdout.
         
@@ -200,39 +210,68 @@ class BrokerWrapper:
         """
         messages = self.read_messages(agent_name, include_acknowledged=False)
         return len(messages)
-    
-    def get_all_pending(self) -> List[Dict]:
-        """Get all pending messages grouped by target agent.
 
-        This is a convenience method for the orchestrator to determine
-        which agent has the most pending messages.
+    def _parse_json_objects(self, content: str) -> List[Dict]:
+        """Parse multiple JSON objects from content (handles pretty-printed JSON).
+
+        The broker script outputs pretty-printed JSON (multi-line), not JSONL.
+        This method uses json.JSONDecoder.raw_decode() to properly parse
+        consecutive JSON objects, handling all JSON edge cases correctly
+        (strings with braces, escaped quotes, nested structures, etc.).
+
+        Args:
+            content: The file content containing multiple JSON objects
 
         Returns:
-            Dict mapping agent names to lists of pending messages
+            List of parsed JSON objects
         """
-        # Read all messages (no filter by agent)
-        # We need to read the file directly since broker doesn't have 'list all' command
+        decoder = json.JSONDecoder()
+        objects = []
+        pos = 0
+
+        while pos < len(content):
+            # Skip whitespace
+            while pos < len(content) and content[pos].isspace():
+                pos += 1
+
+            if pos >= len(content):
+                break
+
+            try:
+                obj, end_idx = decoder.raw_decode(content, pos)
+                if isinstance(obj, dict):
+                    objects.append(obj)
+                pos = end_idx
+            except json.JSONDecodeError:
+                # Skip invalid content and continue
+                pos += 1
+
+        return objects
+
+    def get_all_pending(self) -> List[Dict]:
+        """Get all pending (unacknowledged) messages from the messages file.
+
+        The broker script outputs pretty-printed JSON (multi-line objects),
+        not JSONL. This method properly parses that format.
+
+        Returns:
+            List of pending message dictionaries
+        """
         messages_file = self.messages_file or str(self.target_project_root / "messages.jsonl")
-        
+
         if not Path(messages_file).exists():
             return []
-        
-        all_messages = []
+
         try:
             with open(messages_file, 'r') as f:
-                for line in f:
-                    if line.strip():
-                        try:
-                            msg = json.loads(line)
-                            # Only include unacknowledged messages
-                            if msg.get("timestamp_ack") is None:
-                                all_messages.append(msg)
-                        except json.JSONDecodeError:
-                            continue
+                content = f.read()
         except (IOError, OSError):
             return []
-        
-        return all_messages
+
+        all_messages = self._parse_json_objects(content)
+
+        # Filter for unacknowledged messages only
+        return [msg for msg in all_messages if msg.get("timestamp_ack") is None]
     
     def count_by_agent(self) -> Dict[str, int]:
         """Count pending messages per agent.
