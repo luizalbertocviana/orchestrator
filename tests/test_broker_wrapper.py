@@ -77,6 +77,37 @@ class TestBrokerWrapperInit:
         root = broker._find_project_root()
         assert isinstance(root, Path)
 
+    def test_init_target_project_root(self, temp_messages_file):
+        """Test initialization with custom target_project_root."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as temp_dir:
+            target_root = Path(temp_dir)
+            broker = BrokerWrapper(target_project_root=target_root)
+            assert broker.target_project_root == target_root
+            # messages_file should be resolved relative to target_project_root
+            assert broker.messages_file is None  # Not set by default
+
+    def test_init_target_project_root_messages_file(self):
+        """Test messages_file resolved relative to target_project_root."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as temp_dir:
+            target_root = Path(temp_dir)
+            broker = BrokerWrapper(messages_file="messages.jsonl", target_project_root=target_root)
+            assert broker.messages_file == str(target_root / "messages.jsonl")
+            # broker_path should still use orchestrator_root
+            assert "tools/broker" in str(broker.broker_path)
+
+    def test_init_separate_roots(self):
+        """Test that orchestrator_root and target_project_root are separate."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as temp_dir:
+            target_root = Path(temp_dir)
+            broker = BrokerWrapper(target_project_root=target_root)
+            # orchestrator_root is where .git is (this repo)
+            # target_project_root is the custom path
+            assert broker.target_project_root == target_root
+            assert hasattr(broker, 'orchestrator_root')
+
 
 class TestBrokerWrapperSendMessage:
     """Tests for send_message method."""

@@ -156,9 +156,9 @@ cmd_read() {
     fi
 
     if [[ "$all" == "true" ]]; then
-        jq --arg to "$agent" 'select(.to == $to)' "$MESSAGES_FILE"
+        jq -c --arg to "$agent" 'select(.to == $to)' "$MESSAGES_FILE"
     else
-        jq --arg to "$agent" 'select(.to == $to and .timestamp_ack == null)' "$MESSAGES_FILE"
+        jq -c --arg to "$agent" 'select(.to == $to and .timestamp_ack == null)' "$MESSAGES_FILE"
     fi
 }
 

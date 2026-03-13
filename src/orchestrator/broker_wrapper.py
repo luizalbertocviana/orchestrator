@@ -18,32 +18,42 @@ class BrokerError(Exception):
 
 class BrokerWrapper:
     """Wrapper for the broker shell script.
-    
+
     Provides methods for sending, reading, and acknowledging messages
     in the multi-agent SDLC system.
     """
-    
-    def __init__(self, broker_path: Optional[str] = None, messages_file: Optional[str] = None):
+
+    def __init__(
+        self,
+        broker_path: Optional[str] = None,
+        messages_file: Optional[str] = None,
+        target_project_root: Optional[Path] = None,
+    ):
         """Initialize the broker wrapper.
-        
+
         Args:
-            broker_path: Path to the broker script. Defaults to 'tools/broker' relative to project root.
-            messages_file: Path to the messages JSONL file. Defaults to 'messages.jsonl' in project root.
+            broker_path: Path to the broker script. Defaults to 'tools/broker' relative to orchestrator root.
+            messages_file: Path to the messages JSONL file. Defaults to 'messages.jsonl' in target project root.
+            target_project_root: Root of the target project being worked on. Defaults to current working directory.
+                Used to resolve messages_file path. The broker_path is resolved relative to the orchestrator root.
         """
-        # Find project root (where .git directory is)
-        self.project_root = self._find_project_root()
+        # Find orchestrator root (where .git directory is) - for broker_path
+        self.orchestrator_root = self._find_project_root()
         
+        # Target project root - for messages_file (where the project being developed is)
+        self.target_project_root = target_project_root or Path.cwd()
+
         if broker_path:
             self.broker_path = Path(broker_path)
             if not self.broker_path.is_absolute():
-                self.broker_path = self.project_root / self.broker_path
+                self.broker_path = self.orchestrator_root / self.broker_path
         else:
-            self.broker_path = self.project_root / "tools" / "broker"
-        
+            self.broker_path = self.orchestrator_root / "tools" / "broker"
+
         self.messages_file = messages_file
         if self.messages_file and not Path(self.messages_file).is_absolute():
-            self.messages_file = str(self.project_root / self.messages_file)
-        
+            self.messages_file = str(self.target_project_root / self.messages_file)
+
         self._env = os.environ.copy()
         if self.messages_file:
             self._env["MESSAGES_FILE"] = self.messages_file
@@ -193,16 +203,16 @@ class BrokerWrapper:
     
     def get_all_pending(self) -> List[Dict]:
         """Get all pending messages grouped by target agent.
-        
+
         This is a convenience method for the orchestrator to determine
         which agent has the most pending messages.
-        
+
         Returns:
             Dict mapping agent names to lists of pending messages
         """
         # Read all messages (no filter by agent)
         # We need to read the file directly since broker doesn't have 'list all' command
-        messages_file = self.messages_file or str(self.project_root / "messages.jsonl")
+        messages_file = self.messages_file or str(self.target_project_root / "messages.jsonl")
         
         if not Path(messages_file).exists():
             return []

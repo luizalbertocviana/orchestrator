@@ -70,7 +70,6 @@ def run(
             print_success("All messages processed. System completed naturally.")
             break
 
-        # 2. Select agent with most pending messages (tie-break by role order)
         selected_agent = orchestration_service.select_agent_by_messages()
         if not selected_agent:
             print_error("No agent could be selected.")
