@@ -2,7 +2,7 @@
 
 Agents communicate directly via the broker script. The orchestrator:
 1. Creates bootstrap messages at startup
-2. Selects agents based on pending message count
+2. Selects agents based on SDLC order
 3. Activates agents (which call broker directly)
 4. Commits git changes after each iteration
 """
