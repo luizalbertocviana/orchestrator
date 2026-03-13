@@ -185,6 +185,7 @@ Your responsibilities:
 1. Review implemented code from development branches.
 2. Execute unit tests and verify code coverage.
 3. Perform integration testing to ensure modules work together.
+3. Perform e2e testing.
 4. Create and run test cases based on requirements from specs.md.
 5. Test edge cases, error handling, and non-functional requirements.
 6. Document test results and any bugs or issues found.
