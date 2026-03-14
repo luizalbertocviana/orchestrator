@@ -273,11 +273,15 @@ class OrchestrationService:
         except Exception:
             return "Error getting git log"
     
-    def build_context(self, agent_name: str) -> str:
+    def build_context(self, agent_name: str, iteration: int = 0) -> str:
         """Builds context for the agent.
 
         Note: Agents read their own messages directly from broker.
         This context provides git status and project info only.
+
+        Args:
+            agent_name: Name of the agent being activated
+            iteration: Current iteration number (0 if not provided)
         """
         git_status = self.get_git_status()
         git_log = self.get_git_log()
@@ -298,6 +302,9 @@ class OrchestrationService:
 
 === BROKER STATUS ===
 {self.broker.generate_context()}
+
+=== ITERATION ===
+{iteration}
 """
     
     def call_agent_with_retry(self, logical_agent_name: str, prompt: str, context: str, iteration: int) -> Optional[str]:
@@ -358,7 +365,7 @@ class OrchestrationService:
     
     def activate_agent(self, agent_name: str, iteration: int) -> Optional[str]:
         """Activates a specific logical agent.
-        
+
         The agent receives context and will call broker directly to:
         - Read its messages: broker read <agent_name>
         - Send messages: broker send --from <X> --to <Y> --content <msg>
@@ -368,12 +375,12 @@ class OrchestrationService:
         if not agent:
             print_error(f"Unknown logical agent: {agent_name}")
             return None
-        
+
         print_info(f"Activating {agent_name} (Iteration {iteration})...")
-        
-        context = self.build_context(agent_name)
+
+        context = self.build_context(agent_name, iteration)
         prompt = agent.get_prompt(context)
-        
+
         output = self.call_agent_with_retry(agent_name, prompt, context, iteration)
         return output
 

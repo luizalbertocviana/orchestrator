@@ -230,15 +230,17 @@ class TestGitUtils:
 
 class TestBuildContext:
     """Tests for build_context method."""
-    
+
     def test_build_context(self, service):
         with patch.object(service, 'get_git_status', return_value="status"), \
              patch.object(service, 'get_git_log', return_value="log"), \
              patch.object(service.broker, 'generate_context', return_value="broker_ctx"):
-            ctx = service.build_context("Agent")
+            ctx = service.build_context("Agent", iteration=5)
             assert "status" in ctx
             assert "log" in ctx
             assert "broker_ctx" in ctx
+            assert "=== ITERATION ===" in ctx
+            assert "5" in ctx
             # Should NOT include messages (agents read their own)
             assert "INTER-AGENT MESSAGES" not in ctx
 
