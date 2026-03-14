@@ -49,6 +49,36 @@ A complete multi-agent system designed to manage the full cycle of software deve
 - [jq](https://stedolan.github.io/jq/) - Command-line JSON processor (used by broker).
 - Git - Version control.
 - Bash - Shell environment for broker script.
+- At least one CLI agent installed (see below).
+
+### CLI Agent Configuration
+
+**Important**: CLI agents must be configured to run in **non-interactive mode**. The orchestrator invokes agents with predefined flags to avoid hanging on confirmation prompts.
+
+The following CLI agents are supported with their default flags:
+
+| Agent | Default Flags | Description |
+|-------|---------------|-------------|
+| `opencode` | `run` | Runs in execution mode |
+| `gemini` | `-y -p` | Auto-confirm and prompt mode |
+| `qwen` | `-y` | Auto-confirm |
+| `cline` | `-a -y` | Auto-accept and auto-confirm |
+| `codex` | `--full-auto exec --skip-git-repo-check` | Full automation mode |
+
+**Before using this project**, verify your preferred CLI agent works in non-interactive mode:
+
+```bash
+# Example for opencode - test code editing and shell execution
+opencode run "Create a Python hello world script and run it"
+
+# Example for gemini
+gemini -y -p "Create a Python hello world script and run it"
+
+# Example for qwen  
+qwen -y "Create a Python hello world script and run it"
+```
+
+If the agent prompts for permissions or hangs, consult its documentation to configure non-interactive mode. The orchestrator expects agents to execute tasks autonomously without user intervention.
 
 ### Installation
 
