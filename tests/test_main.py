@@ -95,7 +95,7 @@ def test_run_success(mock_sub, mock_sleep, mock_get_last_iter, mock_service):
     mock_service.verify_tools.return_value = True
     mock_service.verify_git_repo.return_value = True
     mock_service.initialize_beads.return_value = True
-    mock_service.count_pending_messages.side_effect = [2, 1, 0]  # Messages decrease
+    mock_service.count_pending_messages.side_effect = [2, 1, 0, 0]  # Messages decrease, then final check
     mock_service.count_messages_for_agent.return_value = 2  # Messages for agent
     mock_service.select_agent_by_messages.return_value = "Developer"
     mock_service.get_beads_state.return_value = "Done"
@@ -252,6 +252,42 @@ def test_bootstrap_created_when_no_messages(mock_get_last_iter, mock_service):
 
     # Bootstrap should be created
     mock_service.create_bootstrap_messages.assert_called_once()
+
+
+@patch('orchestrator.main.orchestration_service')
+@patch('orchestrator.main.get_last_iteration_from_tags')
+def test_max_iterations_reached_with_pending_messages(mock_get_last_iter, mock_service):
+    """Test warning when max iterations reached with pending messages."""
+    mock_get_last_iter.return_value = 0
+    mock_service.verify_tools.return_value = True
+    mock_service.verify_git_repo.return_value = True
+    mock_service.initialize_beads.return_value = True
+    mock_service.count_pending_messages.return_value = 1  # Always has messages
+    mock_service.count_messages_for_agent.return_value = 1
+    mock_service.select_agent_by_messages.return_value = "Developer"
+    mock_service.activate_agent.return_value = "Done"
+
+    run(max_iterations=3)
+
+    # Should run all 3 iterations
+    assert mock_service.activate_agent.call_count == 3
+
+
+@patch('orchestrator.main.orchestration_service')
+@patch('orchestrator.main.get_last_iteration_from_tags')
+def test_no_agent_selected(mock_get_last_iter, mock_service):
+    """Test error handling when no agent can be selected."""
+    mock_get_last_iter.return_value = 0
+    mock_service.verify_tools.return_value = True
+    mock_service.verify_git_repo.return_value = True
+    mock_service.initialize_beads.return_value = True
+    mock_service.count_pending_messages.return_value = 1  # Has messages
+    mock_service.select_agent_by_messages.return_value = None  # No agent
+
+    run(max_iterations=5)
+
+    # Should stop immediately without activating agents
+    assert mock_service.activate_agent.call_count == 0
 
 
 @patch('orchestrator.main.orchestration_service')

@@ -19,6 +19,7 @@ from orchestrator.utils import (
     print_info,
     print_error,
     print_success,
+    print_warning,
     print_header,
     log_agent_activation,
     log_messages_received,
@@ -105,10 +106,11 @@ def run(
 
     # Track iterations for this run separately to allow fresh max_iterations each run
     iterations_this_run = 0
+    exit_reason = "max_iterations_reached"  # Default if loop completes without break
 
     while iterations_this_run < max_iterations:
         iterations_this_run += 1
-        
+
         # Calculate continuous iteration number for tagging and display
         iteration = last_iteration_from_tags + iterations_this_run
         print_header(f"ITERATION {iteration}")
@@ -118,11 +120,13 @@ def run(
         if pending_count == 0:
             print_header("NO PENDING MESSAGES - SYSTEM COMPLETE")
             print_success("All messages processed. System completed naturally.")
+            exit_reason = "completed_naturally"
             break
 
         selected_agent = orchestration_service.select_agent_by_messages()
         if not selected_agent:
             print_error("No agent could be selected.")
+            exit_reason = "no_agent_selected"
             break
 
         # Log agent activation with count for this specific agent
@@ -156,8 +160,25 @@ def run(
         # Brief pause
         time.sleep(1)
 
+    # Final status report based on exit reason
     print_header("ORCHESTRATION FINAL STATUS")
-    print_success(f"System completed after {iterations_this_run} iterations this run ({last_iteration_from_tags + iterations_this_run} total).")
+    
+    remaining_messages = orchestration_service.count_pending_messages()
+    
+    if exit_reason == "completed_naturally":
+        print_success(f"System completed naturally after {iterations_this_run} iterations this run ({last_iteration_from_tags + iterations_this_run} total).")
+        print_success("No pending messages remaining.")
+    elif exit_reason == "no_agent_selected":
+        print_error(f"Orchestration stopped: no agent could be selected after {iterations_this_run} iterations.")
+        if remaining_messages > 0:
+            print_warning(f"Warning: {remaining_messages} pending messages remain unprocessed.")
+    elif exit_reason == "max_iterations_reached":
+        print_warning(f"Maximum iterations ({max_iterations}) reached after {iterations_this_run} iterations this run ({last_iteration_from_tags + iterations_this_run} total).")
+        if remaining_messages > 0:
+            print_warning(f"Warning: {remaining_messages} pending messages remain unprocessed.")
+            print_info("To continue, run the orchestrator again or increase max_iterations.")
+        else:
+            print_success("No pending messages remaining.")
 
     # Final status report
     final_state = orchestration_service.get_beads_state()
