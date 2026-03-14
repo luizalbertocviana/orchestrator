@@ -10,6 +10,7 @@ Agents communicate directly via the broker script. The orchestrator:
 import typer
 import time
 import subprocess
+import re
 from typing import Optional
 
 from orchestrator.config import config
@@ -25,6 +26,42 @@ from orchestrator.utils import (
 from orchestrator.agents import registry
 
 app = typer.Typer()
+
+
+def get_last_iteration_from_tags() -> int:
+    """Get the last iteration number from existing git tags.
+    
+    Parses tags matching 'iteration-N' pattern and returns the maximum N.
+    Returns 0 if no iteration tags exist.
+    
+    Returns:
+        int: The last iteration number from tags, or 0 if none exist.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "tag", "-l", "iteration-*"],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        tags = result.stdout.strip().splitlines()
+        if not tags:
+            return 0
+        
+        # Extract iteration numbers from tag names
+        iteration_numbers = []
+        for tag in tags:
+            match = re.match(r"iteration-(\d+)$", tag)
+            if match:
+                iteration_numbers.append(int(match.group(1)))
+        
+        return max(iteration_numbers) if iteration_numbers else 0
+    except subprocess.CalledProcessError:
+        # Git command failed (e.g., not a git repo)
+        return 0
+    except Exception:
+        # Any other error, return 0 to start fresh
+        return 0
 
 
 @app.command()
@@ -61,10 +98,19 @@ def run(
 
     print_success("All prerequisites verified")
 
-    iteration = 0
+    # Get last iteration from existing tags to continue numbering across runs
+    last_iteration_from_tags = get_last_iteration_from_tags()
+    if last_iteration_from_tags > 0:
+        print_info(f"Found existing iteration tags. Resuming from iteration {last_iteration_from_tags}.")
 
-    while iteration < max_iterations:
-        iteration += 1
+    # Track iterations for this run separately to allow fresh max_iterations each run
+    iterations_this_run = 0
+
+    while iterations_this_run < max_iterations:
+        iterations_this_run += 1
+        
+        # Calculate continuous iteration number for tagging and display
+        iteration = last_iteration_from_tags + iterations_this_run
         print_header(f"ITERATION {iteration}")
 
         # 1. Check for pending messages
@@ -101,7 +147,7 @@ def run(
         commit_msg = f"Iteration {iteration} - {selected_agent} task completed"
         orchestration_service.commit_changes(selected_agent, commit_msg)
 
-        # Tagging
+        # Tagging with continuous iteration number
         subprocess.run(
             ["git", "tag", "-a", f"iteration-{iteration}", "-m", f"Iteration {iteration} completed"],
             capture_output=True
@@ -111,7 +157,7 @@ def run(
         time.sleep(1)
 
     print_header("ORCHESTRATION FINAL STATUS")
-    print_success(f"System completed after {iteration} iterations.")
+    print_success(f"System completed after {iterations_this_run} iterations this run ({last_iteration_from_tags + iterations_this_run} total).")
 
     # Final status report
     final_state = orchestration_service.get_beads_state()
