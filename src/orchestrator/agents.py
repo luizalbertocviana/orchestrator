@@ -66,7 +66,7 @@ AVAILABLE AGENTS:
 | Maintainer/Reviewer | Monitors system and handles hot-fixes           |
 | Refiner             | Identifies technical debt and proposes improvements |
 | Git Maintainer      | Ensures clean repository and marks progress     |
-| Documentation       | Creates user and technical documentation        |
+| Documentation Specialist       | Creates user and technical documentation        |
 
 INTER-AGENT MESSAGING (use broker commands directly):
 - Broker script path: $BROKER_PATH (see context above - absolute path)
@@ -113,7 +113,7 @@ AVAILABLE AGENTS:
 | Maintainer/Reviewer | Monitors system and handles hot-fixes           |
 | Refiner             | Identifies technical debt and proposes improvements |
 | Git Maintainer      | Ensures clean repository and marks progress     |
-| Documentation       | Creates user and technical documentation        |
+| Documentation Specialist       | Creates user and technical documentation        |
 
 INTER-AGENT MESSAGING (use broker commands directly):
 - Broker script path: $BROKER_PATH (see context above - absolute path)
@@ -160,7 +160,7 @@ AVAILABLE AGENTS:
 | Maintainer/Reviewer | Monitors system and handles hot-fixes           |
 | Refiner             | Identifies technical debt and proposes improvements |
 | Git Maintainer      | Ensures clean repository and marks progress     |
-| Documentation       | Creates user and technical documentation        |
+| Documentation Specialist       | Creates user and technical documentation        |
 
 INTER-AGENT MESSAGING (use broker commands directly):
 - Broker script path: $BROKER_PATH (see context above - absolute path)
@@ -207,7 +207,7 @@ AVAILABLE AGENTS:
 | Maintainer/Reviewer | Monitors system and handles hot-fixes           |
 | Refiner             | Identifies technical debt and proposes improvements |
 | Git Maintainer      | Ensures clean repository and marks progress     |
-| Documentation       | Creates user and technical documentation        |
+| Documentation Specialist       | Creates user and technical documentation        |
 
 INTER-AGENT MESSAGING (use broker commands directly):
 - Broker script path: $BROKER_PATH (see context above - absolute path)
@@ -255,7 +255,7 @@ AVAILABLE AGENTS:
 | Maintainer/Reviewer | Monitors system and handles hot-fixes           |
 | Refiner             | Identifies technical debt and proposes improvements |
 | Git Maintainer      | Ensures clean repository and marks progress     |
-| Documentation       | Creates user and technical documentation        |
+| Documentation Specialist       | Creates user and technical documentation        |
 
 INTER-AGENT MESSAGING (use broker commands directly):
 - Broker script path: $BROKER_PATH (see context above - absolute path)
@@ -300,7 +300,7 @@ AVAILABLE AGENTS:
 | Maintainer/Reviewer | Monitors system and handles hot-fixes           |
 | Refiner             | Identifies technical debt and proposes improvements |
 | Git Maintainer      | Ensures clean repository and marks progress     |
-| Documentation       | Creates user and technical documentation        |
+| Documentation Specialist       | Creates user and technical documentation        |
 
 INTER-AGENT MESSAGING (use broker commands directly):
 - Broker script path: $BROKER_PATH (see context above - absolute path)
@@ -345,7 +345,7 @@ AVAILABLE AGENTS:
 | Maintainer/Reviewer | Monitors system and handles hot-fixes           |
 | Refiner             | Identifies technical debt and proposes improvements |
 | Git Maintainer      | Ensures clean repository and marks progress     |
-| Documentation       | Creates user and technical documentation        |
+| Documentation Specialist       | Creates user and technical documentation        |
 
 INTER-AGENT MESSAGING (use broker commands directly):
 - Broker script path: $BROKER_PATH (see context above - absolute path)
@@ -391,7 +391,7 @@ AVAILABLE AGENTS:
 | Maintainer/Reviewer | Monitors system and handles hot-fixes           |
 | Refiner             | Identifies technical debt and proposes improvements |
 | Git Maintainer      | Ensures clean repository and marks progress     |
-| Documentation       | Creates user and technical documentation        |
+| Documentation Specialist       | Creates user and technical documentation        |
 
 INTER-AGENT MESSAGING (use broker commands directly):
 - Broker script path: $BROKER_PATH (see context above - absolute path)
@@ -440,7 +440,7 @@ AVAILABLE AGENTS:
 | Maintainer/Reviewer | Monitors system and handles hot-fixes           |
 | Refiner             | Identifies technical debt and proposes improvements |
 | Git Maintainer      | Ensures clean repository and marks progress     |
-| Documentation       | Creates user and technical documentation        |
+| Documentation Specialist       | Creates user and technical documentation        |
 
 INTER-AGENT MESSAGING (use broker commands directly):
 - Broker script path: $BROKER_PATH (see context above - absolute path)
