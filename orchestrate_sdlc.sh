@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Wrapper script to run the Python-based SDLC Orchestrator via uv
 
 # Store the current working directory (target project)
