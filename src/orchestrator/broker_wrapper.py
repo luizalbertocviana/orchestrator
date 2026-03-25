@@ -321,11 +321,25 @@ class BrokerWrapper:
     
     def verify(self) -> bool:
         """Verify that the broker script exists and is executable.
-        
+
         Returns:
             True if broker is available, False otherwise
         """
         return self.broker_path.exists() and os.access(self.broker_path, os.X_OK)
+
+    def get_onboard_content(self) -> str:
+        """Returns full 'broker onboard' output for agent context.
+
+        This method executes 'broker onboard' and returns the complete
+        usage documentation for inclusion in agent context.
+
+        Returns:
+            Complete onboard documentation string
+        """
+        try:
+            return self._run_command(["onboard"])
+        except BrokerError:
+            return ""
 
 
 # Global instance for convenience

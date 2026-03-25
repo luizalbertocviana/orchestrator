@@ -522,9 +522,32 @@ class TestBrokerWrapperVerify:
         assert result is False
 
 
+class TestBrokerWrapperGetOnboardContent:
+    """Tests for get_onboard_content method."""
+
+    @patch.object(BrokerWrapper, '_run_command')
+    def test_get_onboard_content_success(self, mock_cmd, broker):
+        """Test successful onboard content retrieval."""
+        mock_cmd.return_value = "# Broker Usage\n\nUsage: broker [command]\n"
+
+        result = broker.get_onboard_content()
+
+        assert result == "# Broker Usage\n\nUsage: broker [command]\n"
+        mock_cmd.assert_called_once_with(["onboard"])
+
+    @patch.object(BrokerWrapper, '_run_command')
+    def test_get_onboard_content_broker_error(self, mock_cmd, broker):
+        """Test handling BrokerError during onboard retrieval."""
+        mock_cmd.side_effect = BrokerError("broker not found")
+
+        result = broker.get_onboard_content()
+
+        assert result == ""
+
+
 class TestGetBroker:
     """Tests for get_broker function."""
-    
+
     def test_get_broker_singleton(self):
         """Test that get_broker returns same instance."""
         # Reset global
