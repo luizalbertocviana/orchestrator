@@ -1,0 +1,2128 @@
+#!/usr/bin/env bash
+#
+# memory - Unified Knowledge Store for AI Agents
+# A lightweight shell-based persistent memory tool for AI agents
+#
+# Usage: memory <command> [options]
+#
+
+set -euo pipefail
+
+# =============================================================================
+# Configuration & Environment
+# =============================================================================
+
+MEMORY_FILE="${MEMORY_FILE:-memory.jsonl}"
+MEMORY_ITERATION="${MEMORY_ITERATION:-0}"
+MEMORY_AGENT="${MEMORY_AGENT:-}"
+LOCK_TIMEOUT="${LOCK_TIMEOUT:-30}"
+
+readonly THRESHOLD_ITEMS=5000
+readonly THRESHOLD_SIZE_MB=50
+
+# Version
+readonly VERSION="1.1.0"
+
+# Exit codes
+readonly EXIT_SUCCESS=0
+readonly EXIT_INVALID_COMMAND=1
+readonly EXIT_INVALID_ARGS=2
+readonly EXIT_STORAGE_ERROR=3
+readonly EXIT_NOT_FOUND=4
+readonly EXIT_IMPORT_ERROR=5
+
+# Relation types
+readonly VALID_RELATIONS="blocks blocked-by implements depends-on references supersedes duplicate-of"
+
+# Item types
+readonly VALID_TYPES="task note metric decision artifact blocker"
+
+# Status values
+readonly VALID_STATUSES="pending in_progress ready_for_review completed blocked"
+
+# Metric units
+readonly VALID_UNITS="percent count seconds bytes"
+
+# Task priorities (0=critical, 4=backlog)
+readonly VALID_PRIORITIES="0 1 2 3 4"
+
+# Blocker urgency
+readonly VALID_URGENCY="low medium high critical"
+
+# Decision status
+readonly VALID_DECISION_STATUS="proposed decided superseded"
+
+# Artifact types
+readonly VALID_ARTIFACT_TYPES="code doc config"
+
+# =============================================================================
+# Utility Functions
+# =============================================================================
+
+# Print error message to stderr
+error() {
+    echo "memory: $*" >&2
+}
+
+warn() {
+    echo "memory: warning: $*" >&2
+}
+
+# Print usage information
+usage() {
+    cat <<'EOF'
+memory - Unified Knowledge Store for AI Agents
+Version: 1.1.0
+
+Usage: memory <command> [options]
+
+================================================================================
+COMMANDS
+================================================================================
+
+onboard              Display this comprehensive usage guide
+create               Create a new memory item
+list                 List memory items with filters
+show                 Show details of a specific item
+update               Update an existing item
+delete               Delete a memory item
+search               Search memory items by text
+link                 Create a relation between items
+unlink               Remove a relation between items
+stats                Show statistics about memory items
+export               Export items to a file
+import               Import items from a file
+version              Display version information
+
+================================================================================
+ENVIRONMENT VARIABLES
+================================================================================
+
+MEMORY_FILE          Path to storage file (default: memory.jsonl)
+MEMORY_ITERATION     Current iteration number (default: 0)
+MEMORY_AGENT         Current agent name
+
+================================================================================
+EXIT CODES
+================================================================================
+
+0 - Success
+1 - Invalid command
+2 - Invalid arguments
+3 - Storage error (lock, I/O)
+4 - Item not found
+5 - Import file error
+
+================================================================================
+ITEM TYPES
+================================================================================
+
+task       - Work items to be completed
+note       - Discoveries, learnings, clarifications
+metric     - Quantitative measurements
+decision   - Binding architectural/technical choices
+artifact   - Produced deliverables (code, docs, configs)
+blocker    - Impediments and dependencies
+
+================================================================================
+VALID VALUES
+================================================================================
+
+Priorities:       0 (critical), 1 (high), 2 (medium), 3 (low), 4 (backlog)
+Statuses:         pending, in_progress, ready_for_review, completed, blocked
+Metric Units:     percent, count, seconds, bytes
+Decision Status:  proposed, decided, superseded
+Artifact Types:   code, doc, config
+Blocker Urgency:  low, medium, high, critical
+Relations:        blocks, blocked-by, implements, depends-on, references, supersedes, duplicate-of
+
+================================================================================
+COMMAND: create
+================================================================================
+
+Create a new memory item.
+
+Usage: memory create --type <type> [title] [options]
+
+Required:
+  --type <type>           Item type: task, note, metric, decision, artifact, blocker
+
+Common Options:
+  --content <text>        Detailed content/description
+  --priority <0-4>        Priority (default: 2)
+  --assignee <name>       Assigned agent name
+  --status <status>       Status (default: pending)
+  --tags <tags>           Comma-separated tags (e.g., "auth,security")
+
+Type-Specific Options:
+
+  For task:
+    --due-iteration <n>   Due iteration number
+
+  For note:
+    --category <cat>      Category classification
+
+  For metric (title not required):
+    --name <name>         Metric name (required)
+    --value <num>         Metric value (required)
+    --unit <unit>         Unit: percent, count, seconds, bytes
+    --trend <trend>       Trend description
+
+  For decision:
+    --context <text>      Decision context
+    --consequence <text>  Decision consequence
+    --alternatives <list> Comma-separated alternatives
+    --decision-status <s> Status: proposed, decided, superseded
+
+  For artifact:
+    --path <path>         File path
+    --checksum <hash>     File checksum
+    --artifact-type <t>   Type: code, doc, config
+
+  For blocker:
+    --urgency <urg>       Urgency: low, medium, high, critical
+    --blocked-by <name>   Agent or item blocking
+    --affects <ids>       Comma-separated affected item IDs
+    --resolution <text>   Resolution description
+
+Examples:
+  memory create --type task "Implement login" --priority 1 --assignee Developer
+  memory create --type note "Using PostgreSQL" --tags "database,decision"
+  memory create --type metric --name coverage --value 85 --unit percent
+  memory create --type decision "Use JWT" --context "Stateless API"
+  memory create --type artifact "Auth module" --path "src/auth.py"
+  memory create --type blocker "Waiting for spec" --urgency high --blocked-by Architect
+
+================================================================================
+COMMAND: list
+================================================================================
+
+List memory items with optional filters.
+
+Usage: memory list [options]
+
+Options:
+  --type <type>           Filter by type
+  --status <status>       Filter by status
+  --assignee <name>       Filter by assignee
+  --priority <n>          Filter by exact priority
+  --priority-min <n>      Filter by minimum priority (<=)
+  --priority-max <n>      Filter by maximum priority (>=)
+  --tag <tag>             Filter by tag (repeatable)
+  --since <iteration>     Filter items created since iteration N
+  --until <iteration>     Filter items created until iteration N
+  --name <name>           Filter metrics by name
+  --limit <n>             Limit results to N items
+  --json                  Output as JSON array (default: JSONL)
+
+Examples:
+  memory list --type task --status pending
+  memory list --assignee Developer --priority-min 0 --priority-max 1
+  memory list --tag security --tag auth
+  memory list --type metric --name coverage --json
+
+================================================================================
+COMMAND: show
+================================================================================
+
+Show details of a specific memory item.
+
+Usage: memory show <id>
+
+Arguments:
+  <id>                    Item ID (e.g., mem_1234567890_a1b2c3d4)
+
+Example:
+  memory show mem_1234567890_a1b2c3d4
+
+================================================================================
+COMMAND: update
+================================================================================
+
+Update an existing memory item.
+
+Usage: memory update <id> [options]
+
+Arguments:
+  <id>                    Item ID to update
+
+Common Options:
+  --title <title>         Update title
+  --content <content>     Update content
+  --status <status>       Update status
+  --priority <n>          Update priority
+  --assignee <name>       Update assignee
+  --tags <tags>           Replace all tags
+  --add-tags <tags>       Add to existing tags
+  --remove-tags <tags>    Remove from existing tags
+
+Type-Specific Options:
+  --value <value>         Update metric value
+  --trend <trend>         Update metric trend
+  --path <path>           Update artifact path
+  --checksum <checksum>   Update artifact checksum
+  --artifact-type <type>  Update artifact type
+  --affects <ids>         Update blocker affects list
+  --resolution <text>     Update blocker resolution
+  --due-iteration <n>     Update task due iteration
+  --category <cat>        Update note category
+  --alternatives <list>   Update decision alternatives
+  --decision-status <s>   Update decision status
+
+Examples:
+  memory update mem_123_abc --status in_progress
+  memory update mem_456_def --value 92
+  memory update mem_789_ghi --add-tags "refactor,tech-debt"
+  memory update mem_001_xyz --status completed
+
+================================================================================
+COMMAND: delete
+================================================================================
+
+Delete a memory item.
+
+Usage: memory delete <id>
+
+Arguments:
+  <id>                    Item ID to delete
+
+Example:
+  memory delete mem_1234567890_a1b2c3d4
+
+================================================================================
+COMMAND: search
+================================================================================
+
+Search memory items by text query.
+
+Usage: memory search <query> [options]
+
+Arguments:
+  <query>                 Search query (matches title, content, tags)
+
+Options:
+  --type <type>           Filter by type
+  --json                  Output as JSON array
+  --limit <n>             Limit results
+
+Example:
+  memory search "authentication"
+  memory search "database" --type decision --json
+
+================================================================================
+COMMAND: link
+================================================================================
+
+Create a relation between two memory items.
+
+Usage: memory link <id> --related-to <id> --relation <relation>
+
+Arguments:
+  <id>                    Source item ID
+  --related-to <id>       Target item ID
+  --relation <relation>   Relation type
+
+Valid Relations:
+  blocks, blocked-by, implements, depends-on, references, supersedes, duplicate-of
+
+Example:
+  memory link mem_123_abc --related-to mem_456_def --relation blocked-by
+  memory link mem_789_ghi --related-to mem_001_jkl --relation references
+
+================================================================================
+COMMAND: unlink
+================================================================================
+
+Remove a relation between two memory items.
+
+Usage: memory unlink <id> --related-to <id>
+
+Arguments:
+  <id>                    Source item ID
+  --related-to <id>       Target item ID
+
+Example:
+  memory unlink mem_123_abc --related-to mem_456_def
+
+================================================================================
+COMMAND: stats
+================================================================================
+
+Show statistics about memory items.
+
+Usage: memory stats [options]
+
+Options:
+  --type <type>           Filter by type
+  --json                  Output as JSON
+
+Example:
+  memory stats
+  memory stats --type task --json
+
+================================================================================
+MEMORY ITEM SCHEMA
+================================================================================
+
+{
+  "id": "mem_<timestamp>_<8_hex_chars>",
+  "type": "task|note|metric|decision|artifact|blocker",
+  "title": "Human-readable title",
+  "content": "Detailed description",
+  "metadata": {
+    "priority": 0-4,
+    "assignee": "string",
+    "status": "pending|in_progress|ready_for_review|completed|blocked",
+    "tags": ["string"],
+    "created_iteration": number,
+    "created_by": "string",
+    "type_specific": { ... }
+  },
+  "relations": [{"to": "mem_xxx", "relation": "..."}],
+  "timestamp_created": "ISO8601",
+  "timestamp_updated": "ISO8601"
+}
+
+================================================================================
+QUICK REFERENCE
+================================================================================
+
+# Create items
+memory create --type task "Do something" --priority 1
+memory create --type note "Important finding" --tags "key,info"
+memory create --type metric --name coverage --value 85 --unit percent
+
+# Query items
+memory list --type task --status pending
+memory list --priority-min 0 --priority-max 1
+memory search "authentication" --type note
+
+# Update items
+memory update mem_xxx --status completed
+memory update mem_xxx --add-tags "done"
+
+# Manage relations
+memory link mem_aaa --related-to mem_bbb --relation depends-on
+memory unlink mem_aaa --related-to mem_bbb
+
+================================================================================
+EOF
+}
+
+# Generate unique ID: mem_<timestamp>_<8_hex_chars>
+generate_id() {
+    local timestamp random
+    timestamp=$(date +%s)
+    random=$(od -An -tx1 -N4 /dev/urandom | tr -d ' \n')
+    echo "mem_${timestamp}_${random}"
+}
+
+# Get current ISO 8601 timestamp
+get_timestamp() {
+    date -u +"%Y-%m-%dT%H:%M:%SZ"
+}
+
+# Validate that a value is in a list
+validate_in() {
+    local value="$1"
+    local list="$2"
+    local item
+    for item in $list; do
+        [[ "$value" == "$item" ]] && return 0
+    done
+    return 1
+}
+
+# Sanitize string for safe shell handling - escape special chars
+# Uses jq to ensure valid JSON string encoding
+sanitize_string() {
+    local input="$1"
+    echo -n "$input" | jq -Rs '.'
+}
+
+# Validate input for potentially dangerous shell patterns
+# Returns 0 if safe, 1 if potentially dangerous
+validate_input() {
+    local input="$1"
+    local danger_pattern='[|`$(){}\\;'"'"'<>!&*?]'
+    
+    if [[ "$input" =~ $danger_pattern ]]; then
+        return 1
+    fi
+    return 0
+}
+
+# Validate storage path - directory writable, file creatable
+validate_storage_path() {
+    local dir
+    dir=$(dirname "$MEMORY_FILE")
+    
+    if [[ ! -d "$dir" ]]; then
+        if ! mkdir -p "$dir" 2>/dev/null; then
+            error "create: cannot create directory: $dir"
+            exit $EXIT_STORAGE_ERROR
+        fi
+    fi
+    
+    if [[ ! -w "$dir" ]]; then
+        error "create: directory not writable: $dir"
+        exit $EXIT_STORAGE_ERROR
+    fi
+    
+    if [[ -f "$MEMORY_FILE" && ! -w "$MEMORY_FILE" ]]; then
+        error "create: file not writable: $MEMORY_FILE"
+        exit $EXIT_STORAGE_ERROR
+    fi
+}
+
+# Check storage thresholds and warn if exceeded
+check_storage_thresholds() {
+    if [[ ! -f "$MEMORY_FILE" ]]; then
+        return
+    fi
+    
+    local item_count file_size_mb
+    item_count=$(wc -l < "$MEMORY_FILE")
+    file_size_mb=$(du -m "$MEMORY_FILE" | cut -f1)
+    
+    if [[ "$item_count" -ge $THRESHOLD_ITEMS ]]; then
+        warn "storage approaching threshold: $item_count items (recommended: < $THRESHOLD_ITEMS). Consider archiving old items."
+    fi
+    
+    if [[ "$file_size_mb" -ge $THRESHOLD_SIZE_MB ]]; then
+        warn "storage approaching threshold: ${file_size_mb}MB (recommended: < ${THRESHOLD_SIZE_MB}MB). Consider exporting and archiving."
+    fi
+}
+
+# =============================================================================
+# File Locking Functions
+# =============================================================================
+
+# Acquire exclusive lock for write operations
+acquire_exclusive_lock() {
+    local lockfile="${MEMORY_FILE}.lock"
+    exec 200>"$lockfile"
+    local start_time
+    start_time=$(date +%s)
+    if ! flock -x -w "$LOCK_TIMEOUT" 200; then
+        error "create: failed to acquire lock (timeout after ${LOCK_TIMEOUT}s)"
+        exit $EXIT_STORAGE_ERROR
+    fi
+    local elapsed
+    elapsed=$(($(date +%s) - start_time))
+    if [[ "$elapsed" -gt 1 ]]; then
+        warn "lock wait time: ${elapsed}s for write operation"
+    fi
+}
+
+# Acquire shared lock for read operations
+acquire_shared_lock() {
+    local lockfile="${MEMORY_FILE}.lock"
+    exec 200>"$lockfile"
+    local start_time
+    start_time=$(date +%s)
+    if ! flock -s -w "$LOCK_TIMEOUT" 200; then
+        error "list: failed to acquire lock (timeout after ${LOCK_TIMEOUT}s)"
+        exit $EXIT_STORAGE_ERROR
+    fi
+    local elapsed
+    elapsed=$(($(date +%s) - start_time))
+    if [[ "$elapsed" -gt 1 ]]; then
+        warn "lock wait time: ${elapsed}s for read operation"
+    fi
+}
+
+# =============================================================================
+# JSONL Storage Primitives
+# =============================================================================
+
+# Ensure storage file exists
+ensure_storage() {
+    if [[ ! -f "$MEMORY_FILE" ]]; then
+        validate_storage_path
+        touch "$MEMORY_FILE" || {
+            error "create: cannot write to storage file: $MEMORY_FILE"
+            exit $EXIT_STORAGE_ERROR
+        }
+        chmod 600 "$MEMORY_FILE"
+    fi
+}
+
+# Read all items from storage (outputs JSONL)
+read_all_items() {
+    if [[ -f "$MEMORY_FILE" ]]; then
+        cat "$MEMORY_FILE"
+    fi
+}
+
+# Append item to storage (as compact JSON for JSONL format)
+append_item() {
+    local json="$1"
+    # Ensure compact single-line JSON
+    echo "$json" | jq -c . >> "$MEMORY_FILE" || {
+        error "create: failed to write to storage"
+        exit $EXIT_STORAGE_ERROR
+    }
+}
+
+# Update item in storage by ID
+update_item_in_storage() {
+    local id="$1"
+    local new_json="$2"
+    local temp_file
+    temp_file=$(mktemp) || {
+        error "update: failed to create temp file"
+        exit $EXIT_STORAGE_ERROR
+    }
+
+    # Use jq to update the specific item
+    jq --arg id "$id" --argjson new "$new_json" '
+        if .id == $id then $new else . end
+    ' "$MEMORY_FILE" > "$temp_file" || {
+        rm -f "$temp_file"
+        error "update: failed to update item"
+        exit $EXIT_STORAGE_ERROR
+    }
+
+    mv "$temp_file" "$MEMORY_FILE" || {
+        error "update: failed to replace storage file"
+        exit $EXIT_STORAGE_ERROR
+    }
+}
+
+# Delete item from storage by ID
+delete_item_from_storage() {
+    local id="$1"
+    local temp_file
+    temp_file=$(mktemp) || {
+        error "delete: failed to create temp file"
+        exit $EXIT_STORAGE_ERROR
+    }
+
+    # Filter out the item with matching ID
+    jq --arg id "$id" 'select(.id != $id)' "$MEMORY_FILE" > "$temp_file" || {
+        rm -f "$temp_file"
+        error "delete: failed to delete item"
+        exit $EXIT_STORAGE_ERROR
+    }
+
+    mv "$temp_file" "$MEMORY_FILE" || {
+        error "delete: failed to replace storage file"
+        exit $EXIT_STORAGE_ERROR
+    }
+}
+
+# Check if item exists
+item_exists() {
+    local id="$1"
+    local count
+    count=$(jq --arg id "$id" 'select(.id == $id)' "$MEMORY_FILE" 2>/dev/null | jq -s 'length')
+    [[ "$count" -gt 0 ]]
+}
+
+# =============================================================================
+# Command: onboard
+# =============================================================================
+
+cmd_onboard() {
+    usage
+    exit $EXIT_SUCCESS
+}
+
+# =============================================================================
+# Command: version
+# =============================================================================
+
+cmd_version() {
+    echo "memory version $VERSION"
+    exit $EXIT_SUCCESS
+}
+
+# =============================================================================
+# Command: create
+# =============================================================================
+
+cmd_create() {
+    local type=""
+    local title=""
+    local content=""
+    local priority=2
+    local assignee=""
+    local status="pending"
+    local tags=""
+
+    # Type-specific fields
+    local metric_name="" metric_value="" metric_unit="" metric_trend=""
+    local decision_context="" decision_consequence="" decision_alternatives="" decision_status=""
+    local artifact_path="" artifact_checksum="" artifact_type=""
+    local blocker_urgency="" blocker_blocked_by="" blocker_affects="" blocker_resolution=""
+    local task_due_iteration=""
+    local note_category=""
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --type)
+                type="$2"
+                shift 2
+                ;;
+            --content)
+                content="$2"
+                shift 2
+                ;;
+            --priority)
+                priority="$2"
+                shift 2
+                ;;
+            --assignee)
+                assignee="$2"
+                shift 2
+                ;;
+            --status)
+                status="$2"
+                shift 2
+                ;;
+            --tags)
+                tags="$2"
+                shift 2
+                ;;
+            --name)
+                metric_name="$2"
+                shift 2
+                ;;
+            --value)
+                metric_value="$2"
+                shift 2
+                ;;
+            --unit)
+                metric_unit="$2"
+                shift 2
+                ;;
+            --trend)
+                metric_trend="$2"
+                shift 2
+                ;;
+            --context)
+                decision_context="$2"
+                shift 2
+                ;;
+            --consequence)
+                decision_consequence="$2"
+                shift 2
+                ;;
+            --alternatives)
+                decision_alternatives="$2"
+                shift 2
+                ;;
+            --decision-status)
+                decision_status="$2"
+                shift 2
+                ;;
+            --path)
+                artifact_path="$2"
+                shift 2
+                ;;
+            --checksum)
+                artifact_checksum="$2"
+                shift 2
+                ;;
+            --artifact-type)
+                artifact_type="$2"
+                shift 2
+                ;;
+            --urgency)
+                blocker_urgency="$2"
+                shift 2
+                ;;
+            --blocked-by)
+                blocker_blocked_by="$2"
+                shift 2
+                ;;
+            --affects)
+                blocker_affects="$2"
+                shift 2
+                ;;
+            --resolution)
+                blocker_resolution="$2"
+                shift 2
+                ;;
+            --due-iteration)
+                task_due_iteration="$2"
+                shift 2
+                ;;
+            --category)
+                note_category="$2"
+                shift 2
+                ;;
+            -*)
+                error "create: unknown option: $1"
+                exit $EXIT_INVALID_ARGS
+                ;;
+            *)
+                if [[ -z "$title" ]]; then
+                    title="$1"
+                fi
+                shift
+                ;;
+        esac
+    done
+
+    # Validate required fields
+    if [[ -z "$type" ]]; then
+        error "create: --type is required"
+        exit $EXIT_INVALID_ARGS
+    fi
+
+    if ! validate_in "$type" "$VALID_TYPES"; then
+        error "create: invalid type '$type'. Valid types: $VALID_TYPES"
+        exit $EXIT_INVALID_ARGS
+    fi
+
+    # Validate input for shell injection patterns (warn but don't block)
+    if [[ -n "$title" ]] && ! validate_input "$title"; then
+        error "create: warning: title contains special shell characters - will be escaped"
+    fi
+    if [[ -n "$content" ]] && ! validate_input "$content"; then
+        error "create: warning: content contains special shell characters - will be escaped"
+    fi
+
+    # Title required for all except metric
+    if [[ "$type" != "metric" && -z "$title" ]]; then
+        error "create: title is required for type '$type'"
+        exit $EXIT_INVALID_ARGS
+    fi
+
+    # Validate priority
+    if ! validate_in "$priority" "$VALID_PRIORITIES"; then
+        error "create: invalid priority '$priority'. Valid: 0-4"
+        exit $EXIT_INVALID_ARGS
+    fi
+
+    # Validate status
+    if ! validate_in "$status" "$VALID_STATUSES"; then
+        error "create: invalid status '$status'. Valid: $VALID_STATUSES"
+        exit $EXIT_INVALID_ARGS
+    fi
+
+    # Type-specific validation
+    case "$type" in
+        metric)
+            if [[ -z "$metric_name" || -z "$metric_value" ]]; then
+                error "create: --name and --value are required for metric type"
+                exit $EXIT_INVALID_ARGS
+            fi
+            if [[ -n "$metric_unit" ]] && ! validate_in "$metric_unit" "$VALID_UNITS"; then
+                error "create: invalid unit '$metric_unit'. Valid: $VALID_UNITS"
+                exit $EXIT_INVALID_ARGS
+            fi
+            ;;
+        decision)
+            if [[ -n "$decision_status" ]] && ! validate_in "$decision_status" "$VALID_DECISION_STATUS"; then
+                error "create: invalid decision status '$decision_status'. Valid: $VALID_DECISION_STATUS"
+                exit $EXIT_INVALID_ARGS
+            fi
+            ;;
+        artifact)
+            if [[ -n "$artifact_type" ]] && ! validate_in "$artifact_type" "$VALID_ARTIFACT_TYPES"; then
+                error "create: invalid artifact type '$artifact_type'. Valid: $VALID_ARTIFACT_TYPES"
+                exit $EXIT_INVALID_ARGS
+            fi
+            ;;
+        blocker)
+            if [[ -n "$blocker_urgency" ]] && ! validate_in "$blocker_urgency" "$VALID_URGENCY"; then
+                error "create: invalid urgency '$blocker_urgency'. Valid: $VALID_URGENCY"
+                exit $EXIT_INVALID_ARGS
+            fi
+            ;;
+    esac
+
+    # Generate ID and timestamp
+    local id timestamp_created
+    id=$(generate_id)
+    timestamp_created=$(get_timestamp)
+
+    # Build tags array
+    local tags_json="[]"
+    if [[ -n "$tags" ]]; then
+        tags_json=$(echo "$tags" | tr ',' '\n' | jq -R . | jq -s .)
+    fi
+
+    # Build type-specific metadata
+    local type_specific_json="{}"
+    case "$type" in
+        task)
+            type_specific_json=$(jq -n \
+                --arg due_iteration "${task_due_iteration:-$MEMORY_ITERATION}" \
+                '{due_iteration: ($due_iteration | tonumber)}')
+            ;;
+        note)
+            type_specific_json=$(jq -n \
+                --arg category "${note_category:-}" \
+                '{category: $category}')
+            ;;
+        metric)
+            type_specific_json=$(jq -n \
+                --arg name "$metric_name" \
+                --argjson value "$metric_value" \
+                --arg unit "${metric_unit:-count}" \
+                --arg trend "${metric_trend:-}" \
+                '{name: $name, value: $value, unit: $unit, trend: $trend}')
+            ;;
+        decision)
+            local alternatives_json="[]"
+            if [[ -n "$decision_alternatives" ]]; then
+                alternatives_json=$(echo "$decision_alternatives" | tr ',' '\n' | jq -R . | jq -s .)
+            fi
+            type_specific_json=$(jq -n \
+                --arg context "${decision_context:-}" \
+                --arg consequence "${decision_consequence:-}" \
+                --argjson alternatives "$alternatives_json" \
+                --arg status "${decision_status:-proposed}" \
+                '{context: $context, consequence: $consequence, alternatives: $alternatives, status: $status}')
+            ;;
+        artifact)
+            type_specific_json=$(jq -n \
+                --arg path "${artifact_path:-}" \
+                --arg checksum "${artifact_checksum:-}" \
+                --arg artifact_type "${artifact_type:-code}" \
+                '{path: $path, checksum: $checksum, artifact_type: $artifact_type}')
+            ;;
+        blocker)
+            local affects_json="[]"
+            if [[ -n "$blocker_affects" ]]; then
+                affects_json=$(echo "$blocker_affects" | tr ',' '\n' | jq -R . | jq -s .)
+            fi
+            type_specific_json=$(jq -n \
+                --arg urgency "${blocker_urgency:-medium}" \
+                --arg blocked_by "${blocker_blocked_by:-}" \
+                --argjson affects "$affects_json" \
+                --arg resolution "${blocker_resolution:-}" \
+                '{urgency: $urgency, blocked_by: $blocked_by, affects: $affects, resolution: $resolution}')
+            ;;
+    esac
+
+    # Build complete JSON object
+    local json
+    json=$(jq -n \
+        --arg id "$id" \
+        --arg type "$type" \
+        --arg title "$title" \
+        --arg content "$content" \
+        --argjson priority "$priority" \
+        --arg assignee "$assignee" \
+        --arg status "$status" \
+        --argjson tags "$tags_json" \
+        --argjson created_iteration "$MEMORY_ITERATION" \
+        --arg created_by "$MEMORY_AGENT" \
+        --argjson type_specific "$type_specific_json" \
+        --arg timestamp_created "$timestamp_created" \
+        '{
+            id: $id,
+            type: $type,
+            title: $title,
+            content: $content,
+            metadata: {
+                priority: $priority,
+                assignee: $assignee,
+                status: $status,
+                tags: $tags,
+                created_iteration: $created_iteration,
+                created_by: $created_by,
+                type_specific: $type_specific
+            },
+            relations: [],
+            timestamp_created: $timestamp_created,
+            timestamp_updated: $timestamp_created
+        }')
+
+    # Acquire lock and write
+    acquire_exclusive_lock
+    ensure_storage
+    append_item "$json"
+
+    # Output created item
+    echo "$json"
+    exit $EXIT_SUCCESS
+}
+
+# =============================================================================
+# Command: list
+# =============================================================================
+
+cmd_list() {
+    local type=""
+    local status=""
+    local assignee=""
+    local priority=""
+    local priority_min=""
+    local priority_max=""
+    local tags=()
+    local since=""
+    local until_iter=""
+    local name=""
+    local all=false
+    local json_output=false
+    local limit=""
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --type)
+                type="$2"
+                shift 2
+                ;;
+            --status)
+                status="$2"
+                shift 2
+                ;;
+            --assignee)
+                assignee="$2"
+                shift 2
+                ;;
+            --priority)
+                priority="$2"
+                shift 2
+                ;;
+            --priority-min)
+                priority_min="$2"
+                shift 2
+                ;;
+            --priority-max)
+                priority_max="$2"
+                shift 2
+                ;;
+            --tag)
+                tags+=("$2")
+                shift 2
+                ;;
+            --since)
+                since="$2"
+                shift 2
+                ;;
+            --until)
+                until_iter="$2"
+                shift 2
+                ;;
+            --name)
+                name="$2"
+                shift 2
+                ;;
+            --all)
+                all=true
+                shift
+                ;;
+            --json)
+                json_output=true
+                shift
+                ;;
+            --limit)
+                limit="$2"
+                shift 2
+                ;;
+            -*)
+                error "list: unknown option: $1"
+                exit $EXIT_INVALID_ARGS
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    # Acquire shared lock and read
+    acquire_shared_lock
+
+    if [[ ! -f "$MEMORY_FILE" ]]; then
+        exit $EXIT_SUCCESS
+    fi
+
+    check_storage_thresholds
+
+    # Build jq filter
+    local filter='.'
+    local conditions=()
+
+    if [[ -n "$type" ]]; then
+        conditions+=("select(.type == \"$type\")")
+    fi
+
+    if [[ -n "$status" ]]; then
+        conditions+=("select(.metadata.status == \"$status\")")
+    fi
+
+    if [[ -n "$assignee" ]]; then
+        conditions+=("select(.metadata.assignee == \"$assignee\")")
+    fi
+
+    if [[ -n "$priority" ]]; then
+        conditions+=("select(.metadata.priority == $priority)")
+    fi
+
+    if [[ -n "$priority_min" ]]; then
+        conditions+=("select(.metadata.priority >= $priority_min)")
+    fi
+
+    if [[ -n "$priority_max" ]]; then
+        conditions+=("select(.metadata.priority <= $priority_max)")
+    fi
+
+    if [[ ${#tags[@]} -gt 0 ]]; then
+        for tag in "${tags[@]}"; do
+            conditions+=("select(.metadata.tags | index(\"$tag\"))")
+        done
+    fi
+
+    if [[ -n "$since" ]]; then
+        conditions+=("select(.metadata.created_iteration >= $since)")
+    fi
+
+    if [[ -n "$until_iter" ]]; then
+        conditions+=("select(.metadata.created_iteration <= $until_iter)")
+    fi
+
+    if [[ -n "$name" ]]; then
+        conditions+=("select(.metadata.type_specific.name == \"$name\")")
+    fi
+
+    # Apply conditions - chain select filters for JSONL output
+    if [[ ${#conditions[@]} -gt 0 ]]; then
+        for cond in "${conditions[@]}"; do
+            filter="$filter | $cond"
+        done
+    fi
+
+    # Read and filter (output as JSONL - one object per line)
+    local result
+    result=$(jq -c "$filter" "$MEMORY_FILE" 2>/dev/null) || {
+        error "list: failed to read storage"
+        exit $EXIT_STORAGE_ERROR
+    }
+
+    # Apply limit
+    if [[ -n "$limit" ]]; then
+        result=$(echo "$result" | head -n "$limit")
+    fi
+
+    # Output
+    if [[ "$json_output" == true ]]; then
+        if [[ -z "$result" ]]; then
+            echo "[]"
+        else
+            echo "$result" | jq -s .
+        fi
+    else
+        if [[ -n "$result" ]]; then
+            echo "$result"
+        fi
+    fi
+
+    exit $EXIT_SUCCESS
+}
+
+# =============================================================================
+# Command: show
+# =============================================================================
+
+cmd_show() {
+    if [[ $# -lt 1 ]]; then
+        error "show: item ID is required"
+        exit $EXIT_INVALID_ARGS
+    fi
+
+    local id="$1"
+
+    # Acquire shared lock
+    acquire_shared_lock
+
+    if [[ ! -f "$MEMORY_FILE" ]]; then
+        error "show: item '$id' not found"
+        exit $EXIT_NOT_FOUND
+    fi
+
+    # Find item
+    local item
+    item=$(jq --arg id "$id" 'select(.id == $id)' "$MEMORY_FILE" 2>/dev/null)
+
+    if [[ -z "$item" ]]; then
+        error "show: item '$id' not found"
+        exit $EXIT_NOT_FOUND
+    fi
+
+    # Output pretty-printed
+    echo "$item" | jq .
+    exit $EXIT_SUCCESS
+}
+
+# =============================================================================
+# Command: update
+# =============================================================================
+
+cmd_update() {
+    if [[ $# -lt 1 ]]; then
+        error "update: item ID is required"
+        exit $EXIT_INVALID_ARGS
+    fi
+
+    local id="$1"
+    shift
+
+    local title=""
+    local content=""
+    local status=""
+    local priority=""
+    local assignee=""
+    local tags=""
+    local add_tags=""
+    local remove_tags=""
+    local value=""
+    local path=""
+    local affects=""
+
+    # Type-specific fields for gap fixes
+    local due_iteration=""
+    local category=""
+    local trend=""
+    local alternatives=""
+    local decision_status=""
+    local checksum=""
+    local artifact_type=""
+    local resolution=""
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --title)
+                title="$2"
+                shift 2
+                ;;
+            --content)
+                content="$2"
+                shift 2
+                ;;
+            --status)
+                status="$2"
+                shift 2
+                ;;
+            --priority)
+                priority="$2"
+                shift 2
+                ;;
+            --assignee)
+                assignee="$2"
+                shift 2
+                ;;
+            --tags)
+                tags="$2"
+                shift 2
+                ;;
+            --add-tags)
+                add_tags="$2"
+                shift 2
+                ;;
+            --remove-tags)
+                remove_tags="$2"
+                shift 2
+                ;;
+            --value)
+                value="$2"
+                shift 2
+                ;;
+            --path)
+                path="$2"
+                shift 2
+                ;;
+            --affects)
+                affects="$2"
+                shift 2
+                ;;
+            --due-iteration)
+                due_iteration="$2"
+                shift 2
+                ;;
+            --category)
+                category="$2"
+                shift 2
+                ;;
+            --trend)
+                trend="$2"
+                shift 2
+                ;;
+            --alternatives)
+                alternatives="$2"
+                shift 2
+                ;;
+            --decision-status)
+                decision_status="$2"
+                shift 2
+                ;;
+            --checksum)
+                checksum="$2"
+                shift 2
+                ;;
+            --artifact-type)
+                artifact_type="$2"
+                shift 2
+                ;;
+            --resolution)
+                resolution="$2"
+                shift 2
+                ;;
+            -*)
+                error "update: unknown option: $1"
+                exit $EXIT_INVALID_ARGS
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    # Validate inputs before acquiring lock
+    if [[ -n "$status" ]] && ! validate_in "$status" "$VALID_STATUSES"; then
+        error "update: invalid status '$status'. Valid: $VALID_STATUSES"
+        exit $EXIT_INVALID_ARGS
+    fi
+
+    if [[ -n "$priority" ]] && ! validate_in "$priority" "$VALID_PRIORITIES"; then
+        error "update: invalid priority '$priority'. Valid: 0-4"
+        exit $EXIT_INVALID_ARGS
+    fi
+
+    if [[ -n "$decision_status" ]] && ! validate_in "$decision_status" "$VALID_DECISION_STATUS"; then
+        error "update: invalid decision status '$decision_status'. Valid: $VALID_DECISION_STATUS"
+        exit $EXIT_INVALID_ARGS
+    fi
+
+    if [[ -n "$artifact_type" ]] && ! validate_in "$artifact_type" "$VALID_ARTIFACT_TYPES"; then
+        error "update: invalid artifact type '$artifact_type'. Valid: $VALID_ARTIFACT_TYPES"
+        exit $EXIT_INVALID_ARGS
+    fi
+
+    if [[ -n "$title" ]] && ! validate_input "$title"; then
+        error "update: warning: title contains special shell characters - will be escaped"
+    fi
+    if [[ -n "$content" ]] && ! validate_input "$content"; then
+        error "update: warning: content contains special shell characters - will be escaped"
+    fi
+
+    # Acquire exclusive lock
+    acquire_exclusive_lock
+
+    if [[ ! -f "$MEMORY_FILE" ]]; then
+        error "update: item '$id' not found"
+        exit $EXIT_NOT_FOUND
+    fi
+
+    # Find item
+    local item
+    item=$(jq --arg id "$id" 'select(.id == $id)' "$MEMORY_FILE" 2>/dev/null)
+
+    if [[ -z "$item" ]]; then
+        error "update: item '$id' not found"
+        exit $EXIT_NOT_FOUND
+    fi
+
+    # Prepare JSON values for jq
+    local tags_json="null" add_tags_json="null" remove_tags_json="null"
+    local affects_json="null" alternatives_json="null"
+    
+    [[ -n "$tags" ]] && tags_json=$(echo "$tags" | tr ',' '\n' | jq -R . | jq -s .)
+    [[ -n "$add_tags" ]] && add_tags_json=$(echo "$add_tags" | tr ',' '\n' | jq -R . | jq -s .)
+    [[ -n "$remove_tags" ]] && remove_tags_json=$(echo "$remove_tags" | tr ',' '\n' | jq -R . | jq -s .)
+    [[ -n "$affects" ]] && affects_json=$(echo "$affects" | tr ',' '\n' | jq -R . | jq -s .)
+    [[ -n "$alternatives" ]] && alternatives_json=$(echo "$alternatives" | tr ',' '\n' | jq -R . | jq -s .)
+
+    local timestamp_updated
+    timestamp_updated=$(get_timestamp)
+
+    # Single jq transformation for all updates - eliminates 20+ separate jq calls
+    local updated_item
+    updated_item=$(jq -c \
+        --arg title "$title" \
+        --arg content "$content" \
+        --arg status "$status" \
+        --arg priority "$priority" \
+        --arg assignee "$assignee" \
+        --argjson tags "$tags_json" \
+        --argjson add_tags "$add_tags_json" \
+        --argjson remove_tags "$remove_tags_json" \
+        --arg value "$value" \
+        --arg path "$path" \
+        --argjson affects "$affects_json" \
+        --arg due_iteration "$due_iteration" \
+        --arg category "$category" \
+        --arg trend "$trend" \
+        --argjson alternatives "$alternatives_json" \
+        --arg decision_status "$decision_status" \
+        --arg checksum "$checksum" \
+        --arg artifact_type "$artifact_type" \
+        --arg resolution "$resolution" \
+        --arg timestamp_updated "$timestamp_updated" \
+        '
+        . as $orig |
+        # Title
+        (if $title != "" then .title = $title else . end) |
+        # Content
+        (if $content != "" then .content = $content else . end) |
+        # Status
+        (if $status != "" then .metadata.status = $status else . end) |
+        # Priority
+        (if $priority != "" then .metadata.priority = ($priority | tonumber) else . end) |
+        # Assignee
+        (if $assignee != "" then .metadata.assignee = $assignee else . end) |
+        # Tags (replace)
+        (if $tags != null then .metadata.tags = $tags else . end) |
+        # Add tags
+        (if $add_tags != null then .metadata.tags = ((.metadata.tags // []) + $add_tags | unique) else . end) |
+        # Remove tags
+        (if $remove_tags != null then .metadata.tags = ((.metadata.tags // []) - $remove_tags) else . end) |
+        # Value (metric)
+        (if $value != "" then .metadata.type_specific.value = ($value | tonumber) else . end) |
+        # Path (artifact)
+        (if $path != "" then .metadata.type_specific.path = $path else . end) |
+        # Affects (blocker)
+        (if $affects != null then .metadata.type_specific.affects = $affects else . end) |
+        # Due iteration (task)
+        (if $due_iteration != "" then .metadata.type_specific.due_iteration = ($due_iteration | tonumber) else . end) |
+        # Category (note)
+        (if $category != "" then .metadata.type_specific.category = $category else . end) |
+        # Trend (metric)
+        (if $trend != "" then .metadata.type_specific.trend = $trend else . end) |
+        # Alternatives (decision)
+        (if $alternatives != null then .metadata.type_specific.alternatives = $alternatives else . end) |
+        # Decision status
+        (if $decision_status != "" then .metadata.type_specific.status = $decision_status else . end) |
+        # Checksum (artifact)
+        (if $checksum != "" then .metadata.type_specific.checksum = $checksum else . end) |
+        # Artifact type
+        (if $artifact_type != "" then .metadata.type_specific.artifact_type = $artifact_type else . end) |
+        # Resolution (blocker)
+        (if $resolution != "" then .metadata.type_specific.resolution = $resolution else . end) |
+        # Update timestamp
+        .timestamp_updated = $timestamp_updated
+        ' <<< "$item") || {
+        error "update: failed to process item"
+        exit $EXIT_STORAGE_ERROR
+    }
+
+    # Write updated item back using single jq pass
+    local temp_file
+    temp_file=$(mktemp) || {
+        error "update: failed to create temp file"
+        exit $EXIT_STORAGE_ERROR
+    }
+
+    jq --arg id "$id" --argjson updated "$updated_item" '
+        if .id == $id then $updated else . end
+    ' "$MEMORY_FILE" > "$temp_file" || {
+        rm -f "$temp_file"
+        error "update: failed to update item"
+        exit $EXIT_STORAGE_ERROR
+    }
+
+    mv "$temp_file" "$MEMORY_FILE" || {
+        error "update: failed to replace storage file"
+        exit $EXIT_STORAGE_ERROR
+    }
+
+    # Output updated item
+    echo "$updated_item" | jq .
+    exit $EXIT_SUCCESS
+}
+
+# =============================================================================
+# Command: delete
+# =============================================================================
+
+cmd_delete() {
+    if [[ $# -lt 1 ]]; then
+        error "delete: item ID is required"
+        exit $EXIT_INVALID_ARGS
+    fi
+
+    local id="$1"
+
+    # Acquire exclusive lock
+    acquire_exclusive_lock
+
+    if [[ ! -f "$MEMORY_FILE" ]]; then
+        error "delete: item '$id' not found"
+        exit $EXIT_NOT_FOUND
+    fi
+
+    # Check if item exists
+    if ! item_exists "$id"; then
+        error "delete: item '$id' not found"
+        exit $EXIT_NOT_FOUND
+    fi
+
+    # Delete item
+    delete_item_from_storage "$id"
+
+    echo "Deleted: $id"
+    exit $EXIT_SUCCESS
+}
+
+# =============================================================================
+# Command: search
+# =============================================================================
+
+cmd_search() {
+    local query=""
+    local type=""
+    local json_output=false
+    local limit=""
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --type)
+                type="$2"
+                shift 2
+                ;;
+            --json)
+                json_output=true
+                shift
+                ;;
+            --limit)
+                limit="$2"
+                shift 2
+                ;;
+            -*)
+                error "search: unknown option: $1"
+                exit $EXIT_INVALID_ARGS
+                ;;
+            *)
+                if [[ -z "$query" ]]; then
+                    query="$1"
+                fi
+                shift
+                ;;
+        esac
+    done
+
+    if [[ -z "$query" ]]; then
+        error "search: query is required"
+        exit $EXIT_INVALID_ARGS
+    fi
+
+    # Acquire shared lock
+    acquire_shared_lock
+
+    if [[ ! -f "$MEMORY_FILE" ]]; then
+        exit $EXIT_SUCCESS
+    fi
+
+    check_storage_thresholds
+
+    # Read and filter - search in title, content, and tags
+    local result
+    result=$(jq -c --arg q "$query" '
+        select(
+            ((.title // "") | ascii_downcase | contains($q | ascii_downcase)) or
+            ((.content // "") | ascii_downcase | contains($q | ascii_downcase)) or
+            ((.metadata.tags // []) | map(ascii_downcase) | any(. | contains($q | ascii_downcase)))
+        )
+    ' "$MEMORY_FILE" 2>/dev/null) || {
+        error "search: failed to read storage"
+        exit $EXIT_STORAGE_ERROR
+    }
+
+    # Apply type filter if specified
+    if [[ -n "$type" ]]; then
+        result=$(echo "$result" | jq -c --arg t "$type" 'select(.type == $t)')
+    fi
+
+    # Apply limit
+    if [[ -n "$limit" ]]; then
+        result=$(echo "$result" | head -n "$limit")
+    fi
+
+    # Output
+    if [[ "$json_output" == true ]]; then
+        if [[ -z "$result" ]]; then
+            echo "[]"
+        else
+            echo "$result" | jq -s .
+        fi
+    else
+        if [[ -n "$result" ]]; then
+            echo "$result"
+        fi
+    fi
+
+    exit $EXIT_SUCCESS
+}
+
+# =============================================================================
+# Command: link
+# =============================================================================
+
+cmd_link() {
+    local id=""
+    local related_to=""
+    local relation=""
+
+    # Parse arguments
+    if [[ $# -lt 1 ]]; then
+        error "link: source item ID is required"
+        exit $EXIT_INVALID_ARGS
+    fi
+
+    id="$1"
+    shift
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --related-to)
+                related_to="$2"
+                shift 2
+                ;;
+            --relation)
+                relation="$2"
+                shift 2
+                ;;
+            -*)
+                error "link: unknown option: $1"
+                exit $EXIT_INVALID_ARGS
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    if [[ -z "$related_to" ]]; then
+        error "link: --related-to is required"
+        exit $EXIT_INVALID_ARGS
+    fi
+
+    if [[ -z "$relation" ]]; then
+        error "link: --relation is required"
+        exit $EXIT_INVALID_ARGS
+    fi
+
+    if ! validate_in "$relation" "$VALID_RELATIONS"; then
+        error "link: invalid relation '$relation'. Valid: $VALID_RELATIONS"
+        exit $EXIT_INVALID_ARGS
+    fi
+
+    # Acquire exclusive lock
+    acquire_exclusive_lock
+
+    if [[ ! -f "$MEMORY_FILE" ]]; then
+        error "link: item '$id' not found"
+        exit $EXIT_NOT_FOUND
+    fi
+
+    # Check if source item exists
+    if ! item_exists "$id"; then
+        error "link: item '$id' not found"
+        exit $EXIT_NOT_FOUND
+    fi
+
+    # Check if target item exists
+    if ! item_exists "$related_to"; then
+        error "link: item '$related_to' not found"
+        exit $EXIT_NOT_FOUND
+    fi
+
+    # Get source item and add relation
+    local item updated_item
+    item=$(jq --arg id "$id" 'select(.id == $id)' "$MEMORY_FILE")
+
+    updated_item=$(echo "$item" | jq --arg to "$related_to" --arg rel "$relation" '
+        .relations += [{to: $to, relation: $rel}]
+    ')
+
+    # Write updated item back
+    local temp_file
+    temp_file=$(mktemp) || {
+        error "link: failed to create temp file"
+        exit $EXIT_STORAGE_ERROR
+    }
+
+    jq --arg id "$id" --argjson updated "$updated_item" '
+        if .id == $id then $updated else . end
+    ' "$MEMORY_FILE" > "$temp_file" || {
+        rm -f "$temp_file"
+        error "link: failed to update item"
+        exit $EXIT_STORAGE_ERROR
+    }
+
+    mv "$temp_file" "$MEMORY_FILE" || {
+        error "link: failed to replace storage file"
+        exit $EXIT_STORAGE_ERROR
+    }
+
+    # Output updated item
+    echo "$updated_item" | jq .
+    exit $EXIT_SUCCESS
+}
+
+# =============================================================================
+# Command: unlink
+# =============================================================================
+
+cmd_unlink() {
+    local id=""
+    local related_to=""
+
+    # Parse arguments
+    if [[ $# -lt 1 ]]; then
+        error "unlink: source item ID is required"
+        exit $EXIT_INVALID_ARGS
+    fi
+
+    id="$1"
+    shift
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --related-to)
+                related_to="$2"
+                shift 2
+                ;;
+            -*)
+                error "unlink: unknown option: $1"
+                exit $EXIT_INVALID_ARGS
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    if [[ -z "$related_to" ]]; then
+        error "unlink: --related-to is required"
+        exit $EXIT_INVALID_ARGS
+    fi
+
+    # Acquire exclusive lock
+    acquire_exclusive_lock
+
+    if [[ ! -f "$MEMORY_FILE" ]]; then
+        error "unlink: item '$id' not found"
+        exit $EXIT_NOT_FOUND
+    fi
+
+    # Check if source item exists
+    if ! item_exists "$id"; then
+        error "unlink: item '$id' not found"
+        exit $EXIT_NOT_FOUND
+    fi
+
+    # Get source item and remove relation
+    local item updated_item
+    item=$(jq --arg id "$id" 'select(.id == $id)' "$MEMORY_FILE")
+
+    updated_item=$(echo "$item" | jq --arg to "$related_to" '
+        .relations = [.relations[] | select(.to != $to)]
+    ')
+
+    # Write updated item back
+    local temp_file
+    temp_file=$(mktemp) || {
+        error "unlink: failed to create temp file"
+        exit $EXIT_STORAGE_ERROR
+    }
+
+    jq --arg id "$id" --argjson updated "$updated_item" '
+        if .id == $id then $updated else . end
+    ' "$MEMORY_FILE" > "$temp_file" || {
+        rm -f "$temp_file"
+        error "unlink: failed to update item"
+        exit $EXIT_STORAGE_ERROR
+    }
+
+    mv "$temp_file" "$MEMORY_FILE" || {
+        error "unlink: failed to replace storage file"
+        exit $EXIT_STORAGE_ERROR
+    }
+
+    # Output updated item
+    echo "$updated_item" | jq .
+    exit $EXIT_SUCCESS
+}
+
+# =============================================================================
+# Command: stats
+# =============================================================================
+
+cmd_stats() {
+    local type=""
+    local json_output=false
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --type)
+                type="$2"
+                shift 2
+                ;;
+            --json)
+                json_output=true
+                shift
+                ;;
+            -*)
+                error "stats: unknown option: $1"
+                exit $EXIT_INVALID_ARGS
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    # Acquire shared lock
+    acquire_shared_lock
+
+    if [[ ! -f "$MEMORY_FILE" ]]; then
+        if [[ "$json_output" == true ]]; then
+            echo '{"total": 0}'
+        else
+            echo "No items in memory."
+        fi
+        exit $EXIT_SUCCESS
+    fi
+
+    check_storage_thresholds
+
+    # Calculate statistics using jq -s (slurp mode)
+    local stats
+    if [[ -n "$type" ]]; then
+        stats=$(jq -s --arg t "$type" '
+            [.[] | select(.type == $t)] |
+            {
+                total: length,
+                by_type: (group_by(.type) | map({key: .[0].type, value: length}) | from_entries),
+                by_status: (map(select(.metadata.status != null)) | group_by(.metadata.status) | map({key: .[0].metadata.status, value: length}) | from_entries),
+                by_priority: (group_by(.metadata.priority) | map({key: (.[0].metadata.priority | tostring), value: length}) | from_entries)
+            }
+        ' "$MEMORY_FILE")
+    else
+        stats=$(jq -s '
+            {
+                total: length,
+                by_type: (group_by(.type) | map({key: .[0].type, value: length}) | from_entries),
+                by_status: (map(select(.metadata.status != null)) | group_by(.metadata.status) | map({key: .[0].metadata.status, value: length}) | from_entries),
+                by_priority: (group_by(.metadata.priority) | map({key: (.[0].metadata.priority | tostring), value: length}) | from_entries)
+            }
+        ' "$MEMORY_FILE")
+    fi
+
+    if [[ "$json_output" == true ]]; then
+        echo "$stats" | jq .
+    else
+        echo "$stats" | jq -r '
+            "Memory Statistics",
+            "=================",
+            "",
+            "Total items: \(.total)",
+            "",
+            "By type:",
+            (.by_type | to_entries | map("  \(.key): \(.value)") | .[]),
+            "",
+            "By status:",
+            (.by_status | to_entries | map("  \(.key): \(.value)") | .[]),
+            "",
+            "By priority:",
+            (.by_priority | to_entries | sort_by(.key | tonumber) | map("  \(.key): \(.value)") | .[])
+        '
+    fi
+
+    exit $EXIT_SUCCESS
+}
+
+# =============================================================================
+# Command: export
+# =============================================================================
+
+cmd_export() {
+    local format="jsonl"
+    local output=""
+    local type=""
+    local since=""
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --format)
+                format="$2"
+                shift 2
+                ;;
+            --output)
+                output="$2"
+                shift 2
+                ;;
+            --type)
+                type="$2"
+                shift 2
+                ;;
+            --since)
+                since="$2"
+                shift 2
+                ;;
+            -*)
+                error "export: unknown option: $1"
+                exit $EXIT_INVALID_ARGS
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    # Validate format
+    if ! validate_in "$format" "jsonl json markdown"; then
+        error "export: invalid format '$format'. Valid: jsonl, json, markdown"
+        exit $EXIT_INVALID_ARGS
+    fi
+
+    # Acquire shared lock
+    acquire_shared_lock
+
+    if [[ ! -f "$MEMORY_FILE" ]]; then
+        exit $EXIT_SUCCESS
+    fi
+
+    # Build filter - chain select filters with |
+    local filter='.'
+    local conditions=()
+
+    if [[ -n "$type" ]]; then
+        conditions+=("select(.type == \"$type\")")
+    fi
+
+    if [[ -n "$since" ]]; then
+        conditions+=("select(.metadata.created_iteration >= $since)")
+    fi
+
+    if [[ ${#conditions[@]} -gt 0 ]]; then
+        for cond in "${conditions[@]}"; do
+            filter="$filter | $cond"
+        done
+    fi
+
+    # Export based on format
+    local result
+    case "$format" in
+        jsonl)
+            result=$(jq -c "$filter" "$MEMORY_FILE" 2>/dev/null)
+            ;;
+        json)
+            # For JSON array output, filter line-by-line then slurp into array
+            result=$(jq -c "$filter" "$MEMORY_FILE" 2>/dev/null | jq -s '.')
+            ;;
+        markdown)
+            # For markdown, iterate over slurped array, filter, then format
+            result=$(jq -s -r ".[] | $filter |
+                \"## \\(.title)\\n\\n**Type:** \\(.type)\\n\\n\\(.content)\\n\"
+            " "$MEMORY_FILE" 2>/dev/null)
+            ;;
+    esac
+
+    # Output
+    if [[ -n "$output" ]]; then
+        echo "$result" > "$output" || {
+            error "export: failed to write to output file"
+            exit $EXIT_STORAGE_ERROR
+        }
+        echo "Exported to: $output"
+    else
+        echo "$result"
+    fi
+
+    exit $EXIT_SUCCESS
+}
+
+# =============================================================================
+# Command: import
+# =============================================================================
+
+cmd_import() {
+    local file=""
+    local merge=false
+    local replace=false
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --file)
+                file="$2"
+                shift 2
+                ;;
+            --merge)
+                merge=true
+                shift
+                ;;
+            --replace)
+                replace=true
+                shift
+                ;;
+            -*)
+                error "import: unknown option: $1"
+                exit $EXIT_INVALID_ARGS
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    if [[ -z "$file" ]]; then
+        error "import: --file is required"
+        exit $EXIT_INVALID_ARGS
+    fi
+
+    if [[ ! -f "$file" ]]; then
+        error "import: file not found: $file"
+        exit $EXIT_IMPORT_ERROR
+    fi
+
+    # Validate JSON
+    if ! jq empty "$file" 2>/dev/null; then
+        error "import: invalid JSON in file: $file"
+        exit $EXIT_IMPORT_ERROR
+    fi
+
+    # Acquire exclusive lock
+    acquire_exclusive_lock
+    ensure_storage
+    check_storage_thresholds
+
+    local imported=0
+    local skipped=0
+    local updated=0
+
+    # Check if file is JSONL (multiple objects) or JSON array
+    local is_array
+    is_array=$(jq -r 'if type == "array" then "yes" else "no" end' "$file" 2>/dev/null | head -1)
+
+    if [[ "$is_array" == "yes" ]]; then
+        # JSON array - iterate
+        local count
+        count=$(jq 'length' "$file")
+
+        for ((i=0; i<count; i++)); do
+            local item
+            item=$(jq ".[$i]" "$file")
+            local item_id
+            item_id=$(echo "$item" | jq -r '.id')
+
+            if item_exists "$item_id"; then
+                if [[ "$replace" == true ]]; then
+                    # Replace existing
+                    local temp_file
+                    temp_file=$(mktemp)
+                    jq --arg id "$item_id" --argjson updated "$item" '
+                        if .id == $id then $updated else . end
+                    ' "$MEMORY_FILE" > "$temp_file"
+                    mv "$temp_file" "$MEMORY_FILE"
+                    updated=$((updated + 1))
+                else
+                    skipped=$((skipped + 1))
+                fi
+            else
+                append_item "$item"
+                imported=$((imported + 1))
+            fi
+        done
+    else
+        # JSONL - read line by line
+        while IFS= read -r line; do
+            [[ -z "$line" ]] && continue
+
+            local item_id
+            item_id=$(echo "$line" | jq -r '.id' 2>/dev/null)
+
+            if [[ -z "$item_id" || "$item_id" == "null" ]]; then
+                error "import: invalid item format (missing id)"
+                exit $EXIT_IMPORT_ERROR
+            fi
+
+            if item_exists "$item_id"; then
+                if [[ "$replace" == true ]]; then
+                    local temp_file
+                    temp_file=$(mktemp)
+                    jq --arg id "$item_id" --argjson updated "$line" '
+                        if .id == $id then $updated else . end
+                    ' "$MEMORY_FILE" > "$temp_file"
+                    mv "$temp_file" "$MEMORY_FILE"
+                    updated=$((updated + 1))
+                else
+                    skipped=$((skipped + 1))
+                fi
+            else
+                append_item "$line"
+                imported=$((imported + 1))
+            fi
+        done < "$file"
+    fi
+
+    echo "Import complete: $imported imported, $skipped skipped, $updated updated"
+    exit $EXIT_SUCCESS
+}
+
+# =============================================================================
+# Main Entry Point
+# =============================================================================
+
+main() {
+    if [[ $# -lt 1 ]]; then
+        usage
+        exit $EXIT_INVALID_COMMAND
+    fi
+
+    local command="$1"
+    shift
+
+    case "$command" in
+        onboard)
+            cmd_onboard "$@"
+            ;;
+        create)
+            cmd_create "$@"
+            ;;
+        list)
+            cmd_list "$@"
+            ;;
+        show)
+            cmd_show "$@"
+            ;;
+        update)
+            cmd_update "$@"
+            ;;
+        delete)
+            cmd_delete "$@"
+            ;;
+        search)
+            cmd_search "$@"
+            ;;
+        link)
+            cmd_link "$@"
+            ;;
+        unlink)
+            cmd_unlink "$@"
+            ;;
+        stats)
+            cmd_stats "$@"
+            ;;
+        export)
+            cmd_export "$@"
+            ;;
+        import)
+            cmd_import "$@"
+            ;;
+        version|--version|-v)
+            cmd_version "$@"
+            ;;
+        *)
+            error "unknown command: $command"
+            usage
+            exit $EXIT_INVALID_COMMAND
+            ;;
+    esac
+}
+
+main "$@"
