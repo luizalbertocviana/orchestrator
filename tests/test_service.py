@@ -17,14 +17,27 @@ def mock_broker():
     broker.count_pending.return_value = 0
     broker.send_message.return_value = "msg_123_test"
     broker.generate_context.return_value = "Broker context"
+    broker.get_onboard_content.return_value = "Broker usage"
+    broker.broker_path = "/path/to/broker"
     return broker
 
 
 @pytest.fixture
-def service(mock_broker):
-    """Create an OrchestrationService instance with mocked broker."""
+def mock_memory():
+    """Create a mock memory instance."""
+    memory = MagicMock()
+    memory.verify.return_value = True
+    memory.generate_context.return_value = "Memory context"
+    memory.get_onboard_content.return_value = "Memory usage"
+    memory.memory_path = "/path/to/memory"
+    return memory
+
+
+@pytest.fixture
+def service(mock_broker, mock_memory):
+    """Create an OrchestrationService instance with mocked broker and memory."""
     with patch('shutil.which', return_value='/usr/bin/gemini'):
-        return OrchestrationService(broker=mock_broker)
+        return OrchestrationService(broker=mock_broker, memory=mock_memory)
 
 
 class TestServiceInit:
@@ -233,12 +246,14 @@ class TestBuildContext:
 
     def test_build_context(self, service):
         with patch.object(service, 'get_git_status', return_value="status"), \
-             patch.object(service, 'get_git_log', return_value="log"), \
-             patch.object(service.broker, 'generate_context', return_value="broker_ctx"):
+             patch.object(service, 'get_git_log', return_value="log"):
             ctx = service.build_context("Agent", iteration=5)
             assert "status" in ctx
             assert "log" in ctx
-            assert "broker_ctx" in ctx
+            assert "Broker context" in ctx
+            assert "Broker usage" in ctx
+            assert "Memory context" in ctx
+            assert "Memory usage" in ctx
             assert "=== ITERATION ===" in ctx
             assert "5" in ctx
             # Should NOT include messages (agents read their own)
@@ -255,9 +270,15 @@ class TestCallAgentWithRetry:
         mock_process.returncode = 0
         mock_process.stdout = "Agent output"
         
-        with patch('subprocess.run', return_value=mock_process):
+        with patch('subprocess.run', return_value=mock_process) as mock_run:
             result = service.call_agent_with_retry("Developer", "prompt", "context", 1)
             assert result == "Agent output"
+            
+            # Verify env vars
+            args, kwargs = mock_run.call_args
+            env = kwargs.get('env', {})
+            assert env.get("MEMORY_ITERATION") == "1"
+            assert env.get("MEMORY_AGENT") == "Developer"
     
     def test_all_fails(self, service):
         with patch('subprocess.run') as mock_run, patch('time.sleep'):

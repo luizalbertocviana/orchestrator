@@ -7,6 +7,7 @@ A complete multi-agent system designed to manage the full cycle of software deve
 - **Message-Driven Activation**: Agents are selected by SDLC role order.
 - **Agents**: Specialized AI agents (Requirements Analyst, Architect, Developer, Tester, etc.) that perform specific SDLC tasks.
 - **Broker**: A lightweight JSONL-based message broker (`tools/broker`) for inter-agent communication.
+- **Memory**: A JSONL-based memory tool (`tools/memory`) for unified knowledge storage (tasks, decisions, metrics).
 - **Git**: Version control for code and documentation.
 
 ## Agent Roles
@@ -29,11 +30,13 @@ A complete multi-agent system designed to manage the full cycle of software deve
 │   ├── main.py             # Main entry point (message-driven loop)
 │   ├── agents.py           # Agent definitions and prompts
 │   ├── broker_wrapper.py   # Broker integration logic
+│   ├── memory_wrapper.py   # Memory integration logic
 │   ├── config.py           # Configuration management
 │   ├── service.py          # Orchestration service layer
 │   └── utils.py            # Shared utility functions
 ├── tools/
-│   └── broker              # Shell-based message broker
+│   ├── broker              # Shell-based message broker
+│   └── memory              # Shell-based memory tool
 ├── tests/                  # Comprehensive test suite (99% coverage)
 ├── multi_agent_sdlc_system.md # Detailed agent prompts and system documentation
 ├── orchestrate_sdlc.sh     # Shell wrapper to run the system
@@ -93,9 +96,9 @@ If the agent prompts for permissions or hangs, consult its documentation to conf
     uv sync
     ```
 
-3.  Ensure broker script is executable:
+3.  Ensure tools are executable:
     ```bash
-    chmod +x tools/broker
+    chmod +x tools/broker tools/memory
     ```
 
 ### Usage
@@ -110,14 +113,13 @@ This will start the message-driven SDLC process in your current working director
 
 ## Workflow
 
-1.  **Initialization**: The system verifies prerequisites (Git, broker script, required CLI agents) and ensures a `specs.md` file exists.
+1.  **Initialization**: The system verifies prerequisites (Git, broker, memory tool, required CLI agents) and ensures a `specs.md` file exists.
 2.  **Bootstrap**: One initial message is created for each agent role using `broker send`.
 3.  **Message-Driven Cycle**:
     -   System selects agent with SDLC role order.
-    -   The chosen agent receives context (including `$BROKER_PATH`), and calls broker directly:
-        -   `broker read` - reads pending messages
-        -   `broker send` - sends messages to other agents
-        -   `broker ack` - acknowledges processed messages
+    -   The chosen agent receives enriched context (including `$BROKER_PATH` and `$MEMORY_PATH`), and calls tools directly:
+        -   `broker read/send/ack` - handle communication
+        -   `memory search/create/list/update` - manage knowledge
     -   System commits changes and tags iteration.
     -   Cycle repeats with the next agent selection.
 4.  **Completion**: The process terminates when no pending messages remain (all messages processed) or max iterations is reached.
@@ -145,30 +147,27 @@ $BROKER_PATH ack msg_1234567890_a1b2c3d4
 $BROKER_PATH ack msg_id1 msg_id2 msg_id3   # Multiple at once
 ```
 
-### Message Schema
+### Knowledge Management (Memory)
 
-```json
-{
-  "id": "msg_<timestamp>_<random>",
-  "from": "agent-name",
-  "to": "agent-name",
-  "content": "message body",
-  "timestamp_sent": "ISO8601",
-  "timestamp_ack": "ISO8601 or null"
-}
+Agents maintain shared state through the memory tool:
+
+**Create Memory Item:**
+```bash
+$MEMORY_PATH create "Architectural Decision" --type decision --content "Use PostgreSQL"
 ```
 
-### Agent Messaging Requirements
-
-Agents **MUST**:
-- Call `broker read` to retrieve messages at the start of each activation
-- Act on the information/requests in messages
-- Send **at least one** `broker send` message to another agent per activation
-- Call `broker ack` to acknowledge ALL processed messages
+**Search Memory:**
+```bash
+$MEMORY_PATH search "database"
+```
 
 ### Context Injection
 
-Agents receive `$BROKER_PATH` in their context—an absolute path to the broker script. This ensures agents can call the broker from any working directory.
+Agents receive enriched context in their activation:
+- **Broker**: `$BROKER_PATH` (absolute path) + current message state summary.
+- **Memory**: `$MEMORY_PATH` (absolute path) + current memory state summary (counts, blockers, metrics).
+- **Onboard**: Full `onboard` documentation for BOTH broker and memory tools.
+- **Iteration**: `$MEMORY_ITERATION` environment variable.
 
 ## Agent Selection Algorithm
 

@@ -19,6 +19,7 @@ from pathlib import Path
 from orchestrator.config import config
 from orchestrator.agents import registry, Agent
 from orchestrator.broker_wrapper import BrokerWrapper, get_broker
+from orchestrator.memory_wrapper import MemoryWrapper, get_memory
 from orchestrator.utils import print_info, print_error, print_success, print_header, print_warning
 
 # Agent role ordering for tie-breaking (SDLC order)
@@ -38,13 +39,16 @@ AGENT_ROLE_ORDER = [
 class OrchestrationService:
     """Service for orchestrating the multi-agent SDLC system."""
     
-    def __init__(self, broker: Optional[BrokerWrapper] = None):
+    def __init__(self, broker: Optional[BrokerWrapper] = None, memory: Optional[MemoryWrapper] = None):
         """Initialize the orchestration service.
         
         Args:
             broker: Optional BrokerWrapper instance. Uses global instance if not provided.
+            memory: Optional MemoryWrapper instance. Uses global instance if not provided.
         """
         self.broker = broker or get_broker()
+        self.memory = memory or get_memory()
+        self.current_iteration = 0
         self.available_cli_agents = self._get_available_cli_agents()
     
     def _get_available_cli_agents(self) -> List[str]:
@@ -276,8 +280,7 @@ class OrchestrationService:
     def build_context(self, agent_name: str, iteration: int = 0) -> str:
         """Builds context for the agent.
 
-        Note: Agents read their own messages directly from broker.
-        This context provides git status and project info only.
+        Includes full tool documentation for both broker and memory.
 
         Args:
             agent_name: Name of the agent being activated
@@ -287,6 +290,7 @@ class OrchestrationService:
         git_log = self.get_git_log()
         cwd = os.getcwd()
         broker_path = str(self.broker.broker_path)
+        memory_path = str(self.memory.memory_path)
 
         return f"""=== GIT STATUS ===
 {git_status if git_status else "Clean working tree"}
@@ -300,8 +304,20 @@ class OrchestrationService:
 === BROKER SCRIPT PATH ===
 {broker_path}
 
+=== BROKER USAGE ===
+{self.broker.get_onboard_content()}
+
 === BROKER STATUS ===
 {self.broker.generate_context()}
+
+=== MEMORY SCRIPT PATH ===
+{memory_path}
+
+=== MEMORY USAGE ===
+{self.memory.get_onboard_content()}
+
+=== MEMORY STATE ===
+{self.memory.generate_context()}
 
 === ITERATION ===
 {iteration}
@@ -333,9 +349,15 @@ class OrchestrationService:
             
             print_info(f"Calling cli agent: {current_cli_agent} [{logical_agent_name}] (attempt {attempt}/{config.max_retries})")
             
+            # Set environment variables for memory tool
+            env = os.environ.copy()
+            env["MEMORY_ITERATION"] = str(iteration)
+            env["MEMORY_AGENT"] = logical_agent_name
+
             try:
                 process = subprocess.run(
                     [current_cli_agent] + flags.split() + [full_prompt],
+                    env=env,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     text=True,

@@ -16,6 +16,16 @@ $BROKER_PATH ack msg_id1 msg_id2         # Acknowledge messages
 $BROKER_PATH onboard                     # Show usage instructions
 ```
 
+### For SDLC Knowledge Management (memory)
+```bash
+$MEMORY_PATH create "Title" --type T     # Create memory item
+$MEMORY_PATH list --type T               # List memory items
+$MEMORY_PATH show mem_id                 # Show item details
+$MEMORY_PATH update mem_id --status S    # Update item
+$MEMORY_PATH search "query"              # Search memory
+$MEMORY_PATH onboard                     # Show usage instructions
+```
+
 ### For Issue Tracking (bd)
 ```bash
 bd ready              # Find available work
@@ -48,7 +58,6 @@ cp -rf source dest          # NOT: cp -r source dest
 - `ssh` - use `-o BatchMode=yes` to fail instead of prompting
 - `apt-get` - use `-y` flag
 - `brew` - use `HOMEBREW_NO_AUTO_UPDATE=1` env var
-
 ---
 
 ## Inter-Agent Messaging with Broker
@@ -92,13 +101,67 @@ $BROKER_PATH ack msg_1234567890_a1b2c3d4
 }
 ```
 
+---
+
+## Knowledge Management with Memory
+
+**IMPORTANT**: This project uses a **JSONL-based memory tool** for unified knowledge storage in the SDLC system.
+
+### Why Memory?
+
+- Structured: Specific item types for tasks, decisions, artifacts, etc.
+- Traceable: Link items to each other (e.g., artifact implements decision)
+- searchable: Text search across all memory items
+- Persistent: Memory stored in `memory.jsonl`
+
+### Quick Start
+
+**Create a memory item:**
+```bash
+$MEMORY_PATH create "Architectural Decision" --type decision --content "Use FastAPI for better performance"
+```
+
+**List items by type:**
+```bash
+$MEMORY_PATH list --type task --status pending
+```
+
+**Update an item:**
+```bash
+$MEMORY_PATH update mem_1234567890_a1b2c3d4 --status completed
+```
+
+**Search memory:**
+```bash
+$MEMORY_PATH search "database"
+```
+
+### Item Types
+
+- `task` - Work item for an agent
+- `note` - General information or insight
+- `metric` - Quantitative data (coverage, performance)
+- `decision` - Architectural or technical decision
+- `artifact` - Code or documentation reference
+- `blocker` - Issue preventing progress
+
 ### Workflow for SDLC Agents
 
-1. **Receive context**: Your activation includes `$BROKER_PATH` (absolute path to broker script)
+1. **Receive context**: Your activation includes `$BROKER_PATH` and `$MEMORY_PATH` (absolute paths)
 2. **Read messages**: Call `$BROKER_PATH read "Your Agent Name"` to get pending messages
-3. **Process messages**: Act on the information/requests in messages
-4. **Send messages**: Call `$BROKER_PATH send` to communicate with other agents
-5. **Acknowledge**: Call `$BROKER_PATH ack` for ALL processed messages
+3. **Search memory**: Use `$MEMORY_PATH search` to find relevant context or previous decisions
+4. **Process work**: Perform your role's tasks based on messages and memory
+5. **Record output**: Use `$MEMORY_PATH create` to log decisions, artifacts, and metrics
+6. **Send messages**: Call `$BROKER_PATH send` to communicate with other agents
+7. **Acknowledge**: Call `$BROKER_PATH ack` for ALL processed messages
+
+### Important Rules
+
+- ✅ Use memory for ALL persistent knowledge (decisions, tasks, artifacts)
+- ✅ Search memory before making new decisions to ensure consistency
+- ✅ Link related items to build a knowledge graph
+- ✅ Use `$MEMORY_PATH` from context (absolute path)
+- ✅ Always acknowledge processed broker messages
 
 ### Important Rules
 
