@@ -198,7 +198,7 @@ The system has comprehensive test coverage:
 # Run tests with coverage
 PYTHONPATH=src uv run pytest --cov=src/orchestrator --cov-report=term-missing
 
-# Current coverage: 99% (125 tests)
+# Current coverage: 99% (217 tests)
 ```
 
 ## Architecture Notes
