@@ -92,15 +92,17 @@ unlink               Remove a relation between items
 stats                Show statistics about memory items
 export               Export items to a file
 import               Import items from a file
-version              Display version information
+version              Display version information (also: --version, -v)
 
 ================================================================================
 ENVIRONMENT VARIABLES
 ================================================================================
 
 MEMORY_FILE          Path to storage file (default: memory.jsonl)
+                     Storage format: pretty-printed JSON array
 MEMORY_ITERATION     Current iteration number (default: 0)
 MEMORY_AGENT         Current agent name
+LOCK_TIMEOUT         File lock timeout in seconds (default: 30)
 
 ================================================================================
 EXIT CODES
@@ -206,20 +208,21 @@ Options:
   --status <status>       Filter by status
   --assignee <name>       Filter by assignee
   --priority <n>          Filter by exact priority
-  --priority-min <n>      Filter by minimum priority (<=)
-  --priority-max <n>      Filter by maximum priority (>=)
+  --priority-min <n>      Filter by minimum priority (>=)
+  --priority-max <n>      Filter by maximum priority (<=)
   --tag <tag>             Filter by tag (repeatable)
   --since <iteration>     Filter items created since iteration N
   --until <iteration>     Filter items created until iteration N
   --name <name>           Filter metrics by name
   --limit <n>             Limit results to N items
-  --json                  Output as JSON array (default: JSONL)
+
+Output: Pretty-printed JSON array (always)
 
 Examples:
   memory list --type task --status pending
   memory list --assignee Developer --priority-min 0 --priority-max 1
   memory list --tag security --tag auth
-  memory list --type metric --name coverage --json
+  memory list --type metric --name coverage
 
 ================================================================================
 COMMAND: show
@@ -302,12 +305,13 @@ Arguments:
 
 Options:
   --type <type>           Filter by type
-  --json                  Output as JSON array
   --limit <n>             Limit results
+
+Output: Pretty-printed JSON array (always)
 
 Example:
   memory search "authentication"
-  memory search "database" --type decision --json
+  memory search "database" --type decision
 
 ================================================================================
 COMMAND: link
@@ -354,11 +358,48 @@ Usage: memory stats [options]
 
 Options:
   --type <type>           Filter by type
-  --json                  Output as JSON
+  --json                  Output as JSON (default: human-readable text)
 
 Example:
   memory stats
   memory stats --type task --json
+
+================================================================================
+COMMAND: export
+================================================================================
+
+Export memory items to a file or stdout.
+
+Usage: memory export [options]
+
+Options:
+  --format <format>       Output format: json (default), jsonl, markdown
+  --output <file>         Write to file instead of stdout
+  --type <type>           Filter by type
+  --since <iteration>     Filter items created since iteration N
+
+Example:
+  memory export
+  memory export --format jsonl --output backup.jsonl
+  memory export --format markdown --output report.md
+  memory export --type task --format json
+
+================================================================================
+COMMAND: import
+================================================================================
+
+Import memory items from a JSON file.
+
+Usage: memory import --file <file> [options]
+
+Options:
+  --file <file>           Input file (required)
+  --merge                 Skip existing items (default)
+  --replace               Replace existing items
+
+Example:
+  memory import --file backup.json
+  memory import --file backup.json --replace
 
 ================================================================================
 MEMORY ITEM SCHEMA
@@ -392,7 +433,7 @@ memory create --type task "Do something" --priority 1
 memory create --type note "Important finding" --tags "key,info"
 memory create --type metric --name coverage --value 85 --unit percent
 
-# Query items
+# Query items (output is always a pretty-printed JSON array)
 memory list --type task --status pending
 memory list --priority-min 0 --priority-max 1
 memory search "authentication" --type note
@@ -404,6 +445,10 @@ memory update mem_xxx --add-tags "done"
 # Manage relations
 memory link mem_aaa --related-to mem_bbb --relation depends-on
 memory unlink mem_aaa --related-to mem_bbb
+
+# Export/Import
+memory export --format json --output backup.json
+memory import --file backup.json
 
 ================================================================================
 EOF
@@ -555,12 +600,39 @@ read_all_items() {
     fi
 }
 
-# Append item to storage (as compact JSON for JSONL format)
+# Append item to storage (as pretty-printed JSON in array)
 append_item() {
-    local json="$1"
-    # Ensure compact single-line JSON
-    echo "$json" | jq -c . >> "$MEMORY_FILE" || {
-        error "create: failed to write to storage"
+    local new_item="$1"
+    local temp_file
+    temp_file=$(mktemp) || {
+        error "create: failed to create temp file"
+        exit $EXIT_STORAGE_ERROR
+    }
+
+    # Check if file exists and is writable (or directory is writable for new files)
+    if [[ -f "$MEMORY_FILE" && ! -w "$MEMORY_FILE" ]]; then
+        rm -f "$temp_file"
+        error "create: file not writable: $MEMORY_FILE"
+        exit $EXIT_STORAGE_ERROR
+    fi
+    
+    # Add to array, write pretty-printed
+    if [[ -s "$MEMORY_FILE" ]] && jq empty "$MEMORY_FILE" 2>/dev/null; then
+        jq --argjson item "$new_item" '. + [$item]' "$MEMORY_FILE" > "$temp_file" || {
+            rm -f "$temp_file"
+            error "create: failed to write to storage"
+            exit $EXIT_STORAGE_ERROR
+        }
+    else
+        # Initialize as array
+        echo "$new_item" | jq -s '.' > "$temp_file" || {
+            rm -f "$temp_file"
+            error "create: failed to write to storage"
+            exit $EXIT_STORAGE_ERROR
+        }
+    fi
+    mv -f "$temp_file" "$MEMORY_FILE" || {
+        error "create: failed to replace storage file"
         exit $EXIT_STORAGE_ERROR
     }
 }
@@ -575,9 +647,9 @@ update_item_in_storage() {
         exit $EXIT_STORAGE_ERROR
     }
 
-    # Use jq to update the specific item
+    # Update item in array, write pretty-printed
     jq --arg id "$id" --argjson new "$new_json" '
-        if .id == $id then $new else . end
+        [.[] | if .id == $id then $new else . end]
     ' "$MEMORY_FILE" > "$temp_file" || {
         rm -f "$temp_file"
         error "update: failed to update item"
@@ -599,8 +671,10 @@ delete_item_from_storage() {
         exit $EXIT_STORAGE_ERROR
     }
 
-    # Filter out the item with matching ID
-    jq --arg id "$id" 'select(.id != $id)' "$MEMORY_FILE" > "$temp_file" || {
+    # Filter out item from array, write pretty-printed
+    jq --arg id "$id" '
+        [.[] | select(.id != $id)]
+    ' "$MEMORY_FILE" > "$temp_file" || {
         rm -f "$temp_file"
         error "delete: failed to delete item"
         exit $EXIT_STORAGE_ERROR
@@ -616,7 +690,7 @@ delete_item_from_storage() {
 item_exists() {
     local id="$1"
     local count
-    count=$(jq --arg id "$id" 'select(.id == $id)' "$MEMORY_FILE" 2>/dev/null | jq -s 'length')
+    count=$(jq --arg id "$id" '[.[] | select(.id == $id)] | length' "$MEMORY_FILE" 2>/dev/null)
     [[ "$count" -gt 0 ]]
 }
 
@@ -960,8 +1034,6 @@ cmd_list() {
     local since=""
     local until_iter=""
     local name=""
-    local all=false
-    local json_output=false
     local limit=""
 
     # Parse arguments
@@ -1006,14 +1078,6 @@ cmd_list() {
             --name)
                 name="$2"
                 shift 2
-                ;;
-            --all)
-                all=true
-                shift
-                ;;
-            --json)
-                json_output=true
-                shift
                 ;;
             --limit)
                 limit="$2"
@@ -1091,9 +1155,9 @@ cmd_list() {
         done
     fi
 
-    # Read and filter (output as JSONL - one object per line)
+    # Read and filter from JSON array storage
     local result
-    result=$(jq -c "$filter" "$MEMORY_FILE" 2>/dev/null) || {
+    result=$(jq -c '.[]' "$MEMORY_FILE" 2>/dev/null | jq -c "$filter") || {
         error "list: failed to read storage"
         exit $EXIT_STORAGE_ERROR
     }
@@ -1103,17 +1167,11 @@ cmd_list() {
         result=$(echo "$result" | head -n "$limit")
     fi
 
-    # Output
-    if [[ "$json_output" == true ]]; then
-        if [[ -z "$result" ]]; then
-            echo "[]"
-        else
-            echo "$result" | jq -s .
-        fi
+    # Output as pretty-printed JSON array
+    if [[ -z "$result" ]]; then
+        echo "[]"
     else
-        if [[ -n "$result" ]]; then
-            echo "$result"
-        fi
+        echo "$result" | jq -s '.'
     fi
 
     exit $EXIT_SUCCESS
@@ -1139,9 +1197,9 @@ cmd_show() {
         exit $EXIT_NOT_FOUND
     fi
 
-    # Find item
+    # Find item from array
     local item
-    item=$(jq --arg id "$id" 'select(.id == $id)' "$MEMORY_FILE" 2>/dev/null)
+    item=$(jq -c '.[]' "$MEMORY_FILE" 2>/dev/null | jq --arg id "$id" 'select(.id == $id)')
 
     if [[ -z "$item" ]]; then
         error "show: item '$id' not found"
@@ -1313,9 +1371,9 @@ cmd_update() {
         exit $EXIT_NOT_FOUND
     fi
 
-    # Find item
+    # Find item from array
     local item
-    item=$(jq --arg id "$id" 'select(.id == $id)' "$MEMORY_FILE" 2>/dev/null)
+    item=$(jq -c '.[]' "$MEMORY_FILE" 2>/dev/null | jq --arg id "$id" 'select(.id == $id)')
 
     if [[ -z "$item" ]]; then
         error "update: item '$id' not found"
@@ -1413,7 +1471,7 @@ cmd_update() {
     }
 
     jq --arg id "$id" --argjson updated "$updated_item" '
-        if .id == $id then $updated else . end
+        [.[] | if .id == $id then $updated else . end]
     ' "$MEMORY_FILE" > "$temp_file" || {
         rm -f "$temp_file"
         error "update: failed to update item"
@@ -1470,7 +1528,6 @@ cmd_delete() {
 cmd_search() {
     local query=""
     local type=""
-    local json_output=false
     local limit=""
 
     # Parse arguments
@@ -1479,10 +1536,6 @@ cmd_search() {
             --type)
                 type="$2"
                 shift 2
-                ;;
-            --json)
-                json_output=true
-                shift
                 ;;
             --limit)
                 limit="$2"
@@ -1517,13 +1570,13 @@ cmd_search() {
 
     # Read and filter - search in title, content, and tags
     local result
-    result=$(jq -c --arg q "$query" '
+    result=$(jq -c '.[]' "$MEMORY_FILE" 2>/dev/null | jq -c --arg q "$query" '
         select(
             ((.title // "") | ascii_downcase | contains($q | ascii_downcase)) or
             ((.content // "") | ascii_downcase | contains($q | ascii_downcase)) or
             ((.metadata.tags // []) | map(ascii_downcase) | any(. | contains($q | ascii_downcase)))
         )
-    ' "$MEMORY_FILE" 2>/dev/null) || {
+    ') || {
         error "search: failed to read storage"
         exit $EXIT_STORAGE_ERROR
     }
@@ -1538,17 +1591,11 @@ cmd_search() {
         result=$(echo "$result" | head -n "$limit")
     fi
 
-    # Output
-    if [[ "$json_output" == true ]]; then
-        if [[ -z "$result" ]]; then
-            echo "[]"
-        else
-            echo "$result" | jq -s .
-        fi
+    # Output as pretty-printed JSON array
+    if [[ -z "$result" ]]; then
+        echo "[]"
     else
-        if [[ -n "$result" ]]; then
-            echo "$result"
-        fi
+        echo "$result" | jq -s '.'
     fi
 
     exit $EXIT_SUCCESS
@@ -1627,9 +1674,9 @@ cmd_link() {
         exit $EXIT_NOT_FOUND
     fi
 
-    # Get source item and add relation
+    # Get source item from array and add relation
     local item updated_item
-    item=$(jq --arg id "$id" 'select(.id == $id)' "$MEMORY_FILE")
+    item=$(jq -c '.[]' "$MEMORY_FILE" | jq --arg id "$id" 'select(.id == $id)')
 
     updated_item=$(echo "$item" | jq --arg to "$related_to" --arg rel "$relation" '
         .relations += [{to: $to, relation: $rel}]
@@ -1643,7 +1690,7 @@ cmd_link() {
     }
 
     jq --arg id "$id" --argjson updated "$updated_item" '
-        if .id == $id then $updated else . end
+        [.[] | if .id == $id then $updated else . end]
     ' "$MEMORY_FILE" > "$temp_file" || {
         rm -f "$temp_file"
         error "link: failed to update item"
@@ -1712,9 +1759,9 @@ cmd_unlink() {
         exit $EXIT_NOT_FOUND
     fi
 
-    # Get source item and remove relation
+    # Get source item from array and remove relation
     local item updated_item
-    item=$(jq --arg id "$id" 'select(.id == $id)' "$MEMORY_FILE")
+    item=$(jq -c '.[]' "$MEMORY_FILE" | jq --arg id "$id" 'select(.id == $id)')
 
     updated_item=$(echo "$item" | jq --arg to "$related_to" '
         .relations = [.relations[] | select(.to != $to)]
@@ -1728,7 +1775,7 @@ cmd_unlink() {
     }
 
     jq --arg id "$id" --argjson updated "$updated_item" '
-        if .id == $id then $updated else . end
+        [.[] | if .id == $id then $updated else . end]
     ' "$MEMORY_FILE" > "$temp_file" || {
         rm -f "$temp_file"
         error "unlink: failed to update item"
@@ -1788,10 +1835,10 @@ cmd_stats() {
 
     check_storage_thresholds
 
-    # Calculate statistics using jq -s (slurp mode)
+    # Calculate statistics from JSON array
     local stats
     if [[ -n "$type" ]]; then
-        stats=$(jq -s --arg t "$type" '
+        stats=$(jq --arg t "$type" '
             [.[] | select(.type == $t)] |
             {
                 total: length,
@@ -1801,7 +1848,7 @@ cmd_stats() {
             }
         ' "$MEMORY_FILE")
     else
-        stats=$(jq -s '
+        stats=$(jq '
             {
                 total: length,
                 by_type: (group_by(.type) | map({key: .[0].type, value: length}) | from_entries),
@@ -1839,7 +1886,7 @@ cmd_stats() {
 # =============================================================================
 
 cmd_export() {
-    local format="jsonl"
+    local format="json"
     local output=""
     local type=""
     local since=""
@@ -1908,15 +1955,16 @@ cmd_export() {
     local result
     case "$format" in
         jsonl)
-            result=$(jq -c "$filter" "$MEMORY_FILE" 2>/dev/null)
+            # Output as compact JSONL from array
+            result=$(jq -c '.[]' "$MEMORY_FILE" 2>/dev/null | jq -c "$filter")
             ;;
         json)
-            # For JSON array output, filter line-by-line then slurp into array
-            result=$(jq -c "$filter" "$MEMORY_FILE" 2>/dev/null | jq -s '.')
+            # For JSON array output, filter then output as pretty array
+            result=$(jq -c '.[]' "$MEMORY_FILE" 2>/dev/null | jq -c "$filter" | jq -s '.')
             ;;
         markdown)
-            # For markdown, iterate over slurped array, filter, then format
-            result=$(jq -s -r ".[] | $filter |
+            # For markdown, iterate over array, filter, then format
+            result=$(jq -r ".[] | $filter |
                 \"## \\(.title)\\n\\n**Type:** \\(.type)\\n\\n\\(.content)\\n\"
             " "$MEMORY_FILE" 2>/dev/null)
             ;;
@@ -2012,11 +2060,11 @@ cmd_import() {
 
             if item_exists "$item_id"; then
                 if [[ "$replace" == true ]]; then
-                    # Replace existing
+                    # Replace existing - update in array
                     local temp_file
                     temp_file=$(mktemp)
                     jq --arg id "$item_id" --argjson updated "$item" '
-                        if .id == $id then $updated else . end
+                        [.[] | if .id == $id then $updated else . end]
                     ' "$MEMORY_FILE" > "$temp_file"
                     mv "$temp_file" "$MEMORY_FILE"
                     updated=$((updated + 1))
@@ -2046,7 +2094,7 @@ cmd_import() {
                     local temp_file
                     temp_file=$(mktemp)
                     jq --arg id "$item_id" --argjson updated "$line" '
-                        if .id == $id then $updated else . end
+                        [.[] | if .id == $id then $updated else . end]
                     ' "$MEMORY_FILE" > "$temp_file"
                     mv "$temp_file" "$MEMORY_FILE"
                     updated=$((updated + 1))
